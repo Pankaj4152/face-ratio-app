@@ -258,15 +258,15 @@ export default function SkinAssessmentModule({
                   key={concern}
                   className={`text-xs px-3.5 py-1.5 rounded-full font-medium select-none flex items-center gap-1.5 transition-all ${
                     isDetected
-                      ? "bg-rausch text-white font-bold shadow-sm"
+                      ? "bg-ink text-white font-bold shadow-sm ring-2 ring-rausch/30"
                       : "bg-surfaceSoft/70 text-mutedSoft border border-hairline/60 cursor-not-allowed opacity-60"
                   }`}
                   title={isDetected ? `Auto-detected concern: ${concern}` : `Not detected (${concern})`}
                 >
-                  <span>{isDetected ? "✓" : "–"}</span>
+                  <span className={isDetected ? "text-rausch" : ""}>{isDetected ? "✓" : "–"}</span>
                   <span>{concern}</span>
                   {isDetected && (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white/20 text-white font-bold">
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rausch text-white font-bold">
                       Detected
                     </span>
                   )}
