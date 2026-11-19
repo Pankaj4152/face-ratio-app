@@ -3,13 +3,25 @@ FaceSemantic & Minor Project FastAPI Backend
 Exposes Part 2: Ratio-to-Keyword Mapping & NLP Query Expansion API.
 """
 
+import os
+import sys
 from typing import List, Dict, Any, Optional
+
+# Ensure the backend directory is in sys.path regardless of execution method or working directory
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from ontology import OntologyEngine, FacialInputProfile, TriggeredRule
-from query_expansion import QueryExpander, ExpandedQueryResult
+try:
+    from ontology import OntologyEngine, FacialInputProfile, TriggeredRule
+    from query_expansion import QueryExpander, ExpandedQueryResult
+except ImportError:
+    from backend.ontology import OntologyEngine, FacialInputProfile, TriggeredRule
+    from backend.query_expansion import QueryExpander, ExpandedQueryResult
 
 app = FastAPI(
     title="FaceSemantic - Facial Geometry Driven Product Retrieval API",
@@ -140,4 +152,4 @@ def map_facial_ratios_to_keywords(payload: RatioMappingRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, app_dir=BACKEND_DIR)
