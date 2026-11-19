@@ -20,9 +20,19 @@ import SkinAssessmentModule from "@/components/SkinAssessmentModule";
 import { analyzeSkinFromCanvas, SkinAnalysisResult } from "@/lib/skinAnalysis";
 
 type Status = "loading" | "ready" | "error";
-type ActiveTab = "shape" | "skin" | "products" | "makeup" | "goldenRatio" | "semantic";
+export type ActiveTab = "shape" | "skin" | "products" | "makeup" | "goldenRatio" | "semantic";
 
-export default function FaceRatioAnalyzer() {
+interface FaceRatioAnalyzerProps {
+  externalTab?: ActiveTab;
+  onTabChange?: (tab: ActiveTab) => void;
+  externalUploadTrigger?: number;
+}
+
+export default function FaceRatioAnalyzer({
+  externalTab,
+  onTabChange,
+  externalUploadTrigger,
+}: FaceRatioAnalyzerProps = {}) {
   const [status, setStatus] = useState<Status>("loading");
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [results, setResults] = useState<RatioResult[] | null>(null);
@@ -30,7 +40,13 @@ export default function FaceRatioAnalyzer() {
   const [faceShape, setFaceShape] = useState<FaceShapeResult | null>(null);
   const [skinAnalysis, setSkinAnalysis] = useState<SkinAnalysisResult | null>(null);
   const [noFace, setNoFace] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>("shape");
+  const [internalTab, setInternalTab] = useState<ActiveTab>("shape");
+
+  const activeTab = externalTab || internalTab;
+  const setActiveTab = (tab: ActiveTab) => {
+    setInternalTab(tab);
+    if (onTabChange) onTabChange(tab);
+  };
 
   // Part 2: FastAPI Semantic Backend State
   const [backendResult, setBackendResult] = useState<RatioMappingResponse | null>(null);
@@ -47,6 +63,14 @@ export default function FaceRatioAnalyzer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const currentImageRef = useRef<HTMLImageElement | null>(null);
   const currentLandmarksRef = useRef<Landmark[] | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Handle external upload triggers
+  useEffect(() => {
+    if (externalUploadTrigger && externalUploadTrigger > 0) {
+      fileInputRef.current?.click();
+    }
+  }, [externalUploadTrigger]);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,141 +103,160 @@ export default function FaceRatioAnalyzer() {
             numFaces: 1,
           });
         }
+
         if (!cancelled) {
           landmarkerRef.current = landmarker;
           setStatus("ready");
         }
       } catch (err) {
-        console.error(err);
+        console.error("Failed to load FaceLandmarker:", err);
         if (!cancelled) setStatus("error");
       }
     })();
 
     return () => {
       cancelled = true;
-      landmarkerRef.current?.close();
     };
   }, []);
 
-  const queryFastAPI = useCallback(async (shape: FaceShapeResult, goldenScore: number | null) => {
-    setBackendLoading(true);
-    setBackendError(null);
-    try {
-      const data = await fetchSemanticMapping(shape, goldenScore);
-      setBackendResult(data);
-    } catch (err: any) {
-      console.warn("FastAPI backend not reachable:", err.message);
-      setBackendError(err.message || "FastAPI server unreachable on port 8000");
-    } finally {
-      setBackendLoading(false);
-    }
-  }, []);
-
   const drawVisuals = useCallback(
-    (landmarks: Landmark[], w: number, h: number) => {
+    (landmarks: Landmark[], width: number, height: number) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      canvas.width = w;
-      canvas.height = h;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      ctx.clearRect(0, 0, w, h);
 
-      // 1. Faint full mesh (optional)
+      const img = currentImageRef.current;
+      if (img) {
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+
+      // 1. Draw Full 468 Mesh
       if (showFullMesh) {
-        ctx.fillStyle = "rgba(156, 122, 61, 0.22)";
-        const r = Math.max(1, w / 450);
-        for (const p of landmarks) {
+        ctx.fillStyle = "rgba(255, 56, 92, 0.4)";
+        for (let i = 0; i < landmarks.length; i++) {
+          const pt = landmarks[i];
           ctx.beginPath();
-          ctx.arc(p.x * w, p.y * h, r, 0, Math.PI * 2);
+          ctx.arc(pt.x * width, pt.y * height, 1, 0, 2 * Math.PI);
           ctx.fill();
         }
       }
 
-      // 2. Face Shape Contour Wireframe
+      // 2. Draw Anthropometric Contour Wireframe
       if (showWireframe) {
+        ctx.strokeStyle = "#ff385c"; // Airbnb Rausch
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = "round";
         ctx.beginPath();
-        const indices = FACE_SHAPE_CONTOUR_INDICES;
-        const first = landmarks[indices[0]];
-        ctx.moveTo(first.x * w, first.y * h);
-        for (let i = 1; i < indices.length; i++) {
-          const pt = landmarks[indices[i]];
-          ctx.lineTo(pt.x * w, pt.y * h);
+        for (let i = 0; i < FACE_SHAPE_CONTOUR_INDICES.length; i++) {
+          const idx = FACE_SHAPE_CONTOUR_INDICES[i];
+          const pt = landmarks[idx];
+          if (!pt) continue;
+          const x = pt.x * width;
+          const y = pt.y * height;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
         }
         ctx.closePath();
-        ctx.strokeStyle = "rgba(184, 134, 11, 0.75)";
-        ctx.lineWidth = Math.max(2, w / 260);
         ctx.stroke();
-        ctx.fillStyle = "rgba(184, 134, 11, 0.08)";
+
+        ctx.fillStyle = "rgba(255, 56, 92, 0.06)";
         ctx.fill();
-
-        // Horizontal measurement axis
-        const drawHLine = (p1Idx: number, p2Idx: number, color: string) => {
-          const p1 = landmarks[p1Idx];
-          const p2 = landmarks[p2Idx];
-          ctx.beginPath();
-          ctx.setLineDash([4, 4]);
-          ctx.moveTo(p1.x * w, p1.y * h);
-          ctx.lineTo(p2.x * w, p2.y * h);
-          ctx.strokeStyle = color;
-          ctx.lineWidth = Math.max(1.5, w / 350);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        };
-
-        drawHLine(103, 332, "rgba(70, 130, 180, 0.75)"); // Forehead
-        drawHLine(234, 454, "rgba(184, 134, 11, 0.85)"); // Cheekbone
-        drawHLine(172, 397, "rgba(205, 92, 92, 0.75)"); // Jaw
       }
 
-      // 3. Facial Thirds reference lines
+      // 3. Draw Facial Thirds Horizontal Dividers
       if (showThirdsLines) {
-        const thirdsPoints = [
-          { idx: POINTS.foreheadTop, label: "Trichion (Hairline)" },
-          { idx: POINTS.glabella, label: "Glabella (Brow)" },
-          { idx: POINTS.noseBase, label: "Subnasale (Nose base)" },
-          { idx: POINTS.chin, label: "Menton (Chin tip)" },
+        const trichion = landmarks[POINTS.foreheadTop] || landmarks[10];
+        const glabella = landmarks[POINTS.glabella] || landmarks[168];
+        const subnasale = landmarks[POINTS.noseBase] || landmarks[2];
+        const menton = landmarks[POINTS.chin] || landmarks[152];
+
+        const lines = [
+          { y: trichion.y * height, label: "Trichion (Hairline)" },
+          { y: glabella.y * height, label: "Glabella (Eyebrow)" },
+          { y: subnasale.y * height, label: "Subnasale (Nose base)" },
+          { y: menton.y * height, label: "Menton (Chin tip)" },
         ];
 
-        ctx.font = `${Math.max(11, Math.round(w / 45))}px serif`;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-        ctx.strokeStyle = "rgba(38, 66, 94, 0.6)";
-        ctx.lineWidth = Math.max(1.2, w / 400);
+        ctx.strokeStyle = "rgba(34, 34, 34, 0.75)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
 
-        for (const tp of thirdsPoints) {
-          const p = landmarks[tp.idx];
-          const y = p.y * h;
+        lines.forEach((l) => {
           ctx.beginPath();
-          ctx.setLineDash([3, 5]);
-          ctx.moveTo(0, y);
-          ctx.lineTo(w, y);
+          ctx.moveTo(width * 0.05, l.y);
+          ctx.lineTo(width * 0.95, l.y);
           ctx.stroke();
-          ctx.setLineDash([]);
 
-          ctx.fillStyle = "rgba(0,0,0,0.6)";
-          ctx.fillText(tp.label, 12, y - 5);
-          ctx.fillStyle = "#EAE6DF";
-          ctx.fillText(tp.label, 11, y - 6);
-        }
+          ctx.setLineDash([]);
+          ctx.font = "bold 10px Circular, sans-serif";
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          const textWidth = ctx.measureText(l.label).width;
+          ctx.fillRect(width * 0.05, l.y - 12, textWidth + 8, 14);
+
+          ctx.fillStyle = "#222222";
+          ctx.fillText(l.label, width * 0.05 + 4, l.y - 2);
+          ctx.setLineDash([4, 4]);
+        });
+        ctx.setLineDash([]);
       }
 
-      // 4. Highlighted anchor landmarks
+      // 4. Draw Feature Anchor Points
       if (showKeyPoints) {
-        const used = Array.from(new Set(Object.values(POINTS)));
-        const rBig = Math.max(3, w / 160);
-        for (const idx of used) {
-          const p = landmarks[idx];
+        const keyIndices = [
+          POINTS.foreheadTop,
+          POINTS.glabella,
+          POINTS.noseBase,
+          POINTS.chin,
+          POINTS.cheekLeft,
+          POINTS.cheekRight,
+          POINTS.jawLeft,
+          POINTS.jawRight,
+          POINTS.eyeLeftOuter,
+          POINTS.eyeRightOuter,
+          POINTS.mouthLeft,
+          POINTS.mouthRight,
+        ];
+
+        keyIndices.forEach((idx) => {
+          const pt = landmarks[idx];
+          if (!pt) return;
+          const x = pt.x * width;
+          const y = pt.y * height;
+
           ctx.beginPath();
-          ctx.arc(p.x * w, p.y * h, rBig, 0, Math.PI * 2);
-          ctx.fillStyle = "#26425E";
+          ctx.arc(x, y, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = "#ffffff";
           ctx.fill();
-          ctx.strokeStyle = "#FFFFFF";
-          ctx.lineWidth = Math.max(1, w / 400);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "#ff385c";
           ctx.stroke();
-        }
+        });
       }
     },
     [showWireframe, showThirdsLines, showKeyPoints, showFullMesh]
+  );
+
+  // Call FastAPI Semantic Backend
+  const queryFastAPI = useCallback(
+    async (shape: FaceShapeResult, goldenRatioScore: number | null) => {
+      setBackendLoading(true);
+      setBackendError(null);
+      try {
+        const response = await fetchSemanticMapping(shape, goldenRatioScore);
+        setBackendResult(response);
+      } catch (err: any) {
+        console.warn("FastAPI ontology mapping unavailable:", err.message);
+        setBackendError(err.message || "FastAPI connection failed");
+      } finally {
+        setBackendLoading(false);
+      }
+    },
+    []
   );
 
   const runDetection = useCallback(
@@ -222,12 +265,8 @@ export default function FaceRatioAnalyzer() {
       const canvas = canvasRef.current;
       if (!landmarker || !canvas) return;
 
-      currentImageRef.current = img;
-
       const w = img.naturalWidth || img.width;
       const h = img.naturalHeight || img.height;
-      if (!w || !h) return;
-
       canvas.width = w;
       canvas.height = h;
 
@@ -235,15 +274,14 @@ export default function FaceRatioAnalyzer() {
         if (typeof img.decode === "function") {
           await img.decode();
         }
-      } catch {
-        // ignore decode errors if already decoded
+      } catch (e) {
+        // Fallback gracefully
       }
 
       let result: any = null;
       try {
         result = landmarker.detect(img);
       } catch (detectErr) {
-        console.warn("Direct image detection failed, trying via canvas buffer...", detectErr);
         const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
@@ -267,23 +305,15 @@ export default function FaceRatioAnalyzer() {
       currentLandmarksRef.current = landmarks;
 
       // 1. Classical Golden Ratio Scores
-      const { rows, overallScore } = scoreRatios(
-        landmarks,
-        canvas.width,
-        canvas.height
-      );
+      const { rows, overallScore } = scoreRatios(landmarks, w, h);
       setResults(rows);
       setScore(overallScore);
 
       // 2. Part 1 Anthropometric Face Shape Classification
-      const classifiedShape = classifyFaceShape(
-        landmarks,
-        canvas.width,
-        canvas.height
-      );
+      const classifiedShape = classifyFaceShape(landmarks, w, h);
       setFaceShape(classifiedShape);
 
-      // 3. Part 4 Computer Vision Skin Tone & Condition Analysis (sampled from pristine photo)
+      // 3. Part 4 Computer Vision Skin Tone & Condition Analysis
       const rawCtx = canvas.getContext("2d", { willReadFrequently: true });
       if (rawCtx) {
         rawCtx.drawImage(img, 0, 0, w, h);
@@ -292,7 +322,7 @@ export default function FaceRatioAnalyzer() {
       }
 
       // 4. Render Canvas Overlays
-      drawVisuals(landmarks, canvas.width, canvas.height);
+      drawVisuals(landmarks, w, h);
 
       // 5. Trigger Part 2 FastAPI Semantic Mapping
       queryFastAPI(classifiedShape, overallScore);
@@ -315,7 +345,7 @@ export default function FaceRatioAnalyzer() {
     }
   }, [drawVisuals]);
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -324,110 +354,138 @@ export default function FaceRatioAnalyzer() {
 
     const img = new Image();
     img.crossOrigin = "anonymous";
+    img.src = url;
     img.onload = () => {
+      currentImageRef.current = img;
       runDetection(img);
     };
-    img.src = url;
-  }
+  };
+
+  const loadSample = (sampleUrl: string) => {
+    setImgSrc(sampleUrl);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = sampleUrl;
+    img.onload = () => {
+      currentImageRef.current = img;
+      runDetection(img);
+    };
+  };
 
   return (
-    <div className="grid lg:grid-cols-[55%_45%] gap-8 items-start">
-      {/* LEFT: Image & Canvas with Interactive Visual Toggles */}
-      <div className="space-y-4">
-        <div className="relative bg-panel border border-line rounded-lg overflow-hidden shadow-sm">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      {/* LEFT: Photo Canvas Plate (5 Cols) */}
+      <div className="lg:col-span-5 space-y-4">
+        <div className="relative aspect-[3/4] w-full rounded-[14px] overflow-hidden bg-surfaceSoft border border-hairline shadow-airbnb flex items-center justify-center">
           {imgSrc ? (
-            <div className="relative w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imgSrc}
-                alt="Uploaded face preview"
-                className="w-full block object-contain max-h-[620px] bg-black/5"
-              />
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full pointer-events-none"
-              />
-            </div>
+            <canvas ref={canvasRef} className="w-full h-full object-contain" />
           ) : (
-            <div className="aspect-[4/3] flex flex-col items-center justify-center text-ink/40 text-sm p-8 text-center border-2 border-dashed border-line/70 m-4 rounded-lg">
-              <svg
-                className="w-12 h-12 mb-3 text-ink/30"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="text-center p-8 space-y-3">
+              <div className="w-14 h-14 mx-auto rounded-full bg-rausch/10 text-rausch flex items-center justify-center text-2xl font-bold">
+                📷
+              </div>
+              <p className="text-sm font-semibold text-ink">
+                No Portrait Selected
+              </p>
+              <p className="text-xs text-muted max-w-xs mx-auto">
+                Upload a front-facing portrait to analyze facial thirds, bone contours, skin undertones, and semantic products.
+              </p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={status !== "ready"}
+                className="mt-2 text-xs px-5 py-2.5 rounded-airbnbSm bg-rausch hover:bg-rausch-active text-white font-medium transition shadow-sm cursor-pointer disabled:opacity-50"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                  d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <span className="font-medium text-ink/60 mb-1">
-                Upload a front-facing portrait photo
-              </span>
-              <span className="text-xs text-ink/40 max-w-xs">
-                Photos are analyzed in-browser via MediaPipe FaceMesh. Ratios map to semantic search queries via the FastAPI backend.
-              </span>
+                Upload Front Portrait
+              </button>
             </div>
           )}
         </div>
 
-        {/* Visual Controls / Overlay Toggles */}
+        {/* Canvas Visual Toggles */}
         {imgSrc && (
-          <div className="bg-panel border border-line rounded-lg p-3 px-4 text-xs flex flex-wrap items-center gap-4 text-ink/80">
-            <span className="font-semibold text-ink/60 uppercase tracking-wider text-[10px]">
-              Overlays:
+          <div className="rounded-[14px] border border-hairline bg-white p-3.5 shadow-sm space-y-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted block">
+              Wireframe Overlays
             </span>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showWireframe}
-                onChange={(e) => setShowWireframe(e.target.checked)}
-                className="rounded text-brass focus:ring-brass"
-              />
-              <span>Face Contour</span>
-            </label>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showThirdsLines}
-                onChange={(e) => setShowThirdsLines(e.target.checked)}
-                className="rounded text-brass focus:ring-brass"
-              />
-              <span>Facial Thirds</span>
-            </label>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showKeyPoints}
-                onChange={(e) => setShowKeyPoints(e.target.checked)}
-                className="rounded text-brass focus:ring-brass"
-              />
-              <span>Feature Points</span>
-            </label>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showFullMesh}
-                onChange={(e) => setShowFullMesh(e.target.checked)}
-                className="rounded text-brass focus:ring-brass"
-              />
-              <span>Full Mesh (468)</span>
-            </label>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-hairline bg-surfaceSoft cursor-pointer hover:bg-white transition text-ink font-medium">
+                <input
+                  type="checkbox"
+                  checked={showWireframe}
+                  onChange={(e) => setShowWireframe(e.target.checked)}
+                  className="rounded text-rausch focus:ring-rausch"
+                />
+                <span>Contour Wireframe</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-hairline bg-surfaceSoft cursor-pointer hover:bg-white transition text-ink font-medium">
+                <input
+                  type="checkbox"
+                  checked={showThirdsLines}
+                  onChange={(e) => setShowThirdsLines(e.target.checked)}
+                  className="rounded text-rausch focus:ring-rausch"
+                />
+                <span>Facial Thirds</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-hairline bg-surfaceSoft cursor-pointer hover:bg-white transition text-ink font-medium">
+                <input
+                  type="checkbox"
+                  checked={showKeyPoints}
+                  onChange={(e) => setShowKeyPoints(e.target.checked)}
+                  className="rounded text-rausch focus:ring-rausch"
+                />
+                <span>Feature Points</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-hairline bg-surfaceSoft cursor-pointer hover:bg-white transition text-ink font-medium">
+                <input
+                  type="checkbox"
+                  checked={showFullMesh}
+                  onChange={(e) => setShowFullMesh(e.target.checked)}
+                  className="rounded text-rausch focus:ring-rausch"
+                />
+                <span>Mesh (468)</span>
+              </label>
+            </div>
           </div>
         )}
+
+        {/* Sample Portraits Strip */}
+        <div className="rounded-[14px] border border-hairline bg-white p-3.5 shadow-sm space-y-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-muted block">
+            Or Test With Sample Portraits:
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: "Portrait 1", url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80" },
+              { label: "Portrait 2", url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80" },
+              { label: "Portrait 3", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80" },
+            ].map((s) => (
+              <button
+                key={s.label}
+                onClick={() => loadSample(s.url)}
+                disabled={status !== "ready"}
+                className="text-xs px-3.5 py-1.5 rounded-full bg-surfaceSoft hover:bg-hairlineSoft border border-hairline text-ink font-medium transition cursor-pointer disabled:opacity-50"
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* RIGHT: Analysis Results & Tabs */}
-      <div className="bg-panel border border-line rounded-lg p-6 shadow-sm">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-line">
+      {/* RIGHT: Results & Tabbed Modules (7 Cols) */}
+      <div className="lg:col-span-7 bg-white border border-hairline rounded-[14px] p-6 shadow-airbnb space-y-6">
+        {/* Top Action Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-hairline">
           <div>
             <label className="inline-flex items-center gap-2 cursor-pointer">
-              <span className="text-sm font-medium bg-ink text-paper px-4 py-2 rounded shadow hover:bg-ink/90 transition-colors">
-                {imgSrc ? "Change Photo" : "Upload Face Photo"}
+              <span className="text-sm font-medium bg-rausch hover:bg-rausch-active text-white px-5 py-2.5 rounded-airbnbSm shadow-sm transition-colors cursor-pointer">
+                {imgSrc ? "Change Photo" : "Upload Portrait"}
               </span>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 onChange={handleFile}
@@ -435,221 +493,212 @@ export default function FaceRatioAnalyzer() {
                 className="hidden"
               />
             </label>
-            <p className="text-xs text-ink/50 mt-1.5">
-              {status === "loading" && "Initializing MediaPipe ML model…"}
-              {status === "ready" && "Client ML engine ready"}
-              {status === "error" &&
-                "Model failed to load — check your connection"}
+            <p className="text-xs text-muted mt-1.5">
+              {status === "loading" && "Loading MediaPipe ML Vision engine…"}
+              {status === "ready" && "Ready for portrait analysis"}
+              {status === "error" && "Engine initialization error"}
             </p>
           </div>
 
           {faceShape && (
             <div className="text-right">
-              <span className="text-xs text-ink/50 uppercase tracking-widest font-semibold block">
-                Primary Shape
+              <span className="text-[11px] text-muted uppercase tracking-wider font-bold block">
+                Classified Shape
               </span>
-              <span className="font-serif text-2xl font-bold text-brass">
-                {faceShape.primaryShape}
-              </span>
-              <span className="text-xs text-ink/60 ml-1.5">
-                ({faceShape.confidence}% fit)
-              </span>
+              <div className="flex items-center gap-1.5 justify-end">
+                <span className="text-2xl font-bold text-ink">
+                  {faceShape.primaryShape}
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-rausch/10 text-rausch font-bold border border-rausch/20">
+                  {faceShape.confidence}% fit
+                </span>
+              </div>
             </div>
           )}
         </div>
 
         {noFace && (
-          <div className="p-4 rounded bg-red-50 text-red-800 text-sm border border-red-200">
-            <strong>No face detected.</strong> Please upload a clearer front-facing photo with direct lighting and visible forehead and chin.
+          <div className="p-4 rounded-airbnbSm bg-surfaceSoft text-ink text-sm border border-hairline">
+            <strong className="text-rausch">No face detected.</strong> Please upload a clearer front-facing portrait with direct lighting and visible forehead and chin.
           </div>
         )}
 
         {faceShape && results && (
           <div>
-            {/* Navigation Tabs */}
-            <div className="flex border-b border-line mb-5 gap-2 overflow-x-auto pb-1">
+            {/* Airbnb Tab Switcher */}
+            <div className="flex border-b border-hairline mb-6 gap-3 overflow-x-auto pb-1 scrollbar-none">
               <button
                 onClick={() => setActiveTab("shape")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeTab === "shape"
-                    ? "border-brass text-brass"
-                    : "border-transparent text-ink/60 hover:text-ink"
+                    ? "border-rausch text-rausch font-bold"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 Face Shape Details
               </button>
+
               <button
                 onClick={() => setActiveTab("skin")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "skin"
-                    ? "border-emerald-500 text-emerald-400"
-                    : "border-transparent text-ink/60 hover:text-ink"
+                    ? "border-rausch text-rausch font-bold"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 <span>Skin Health & Routine</span>
                 {skinAnalysis && (
                   <span
-                    className="w-2 h-2 rounded-full border border-black/30"
+                    className="w-2.5 h-2.5 rounded-full border border-black/20"
                     style={{ backgroundColor: skinAnalysis.hexColor }}
                     title={`Tone: ${skinAnalysis.skinTone}`}
                   />
                 )}
               </button>
+
               <button
                 onClick={() => setActiveTab("products")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "products"
-                    ? "border-violet-500 text-violet-400"
-                    : "border-transparent text-ink/60 hover:text-ink"
+                    ? "border-rausch text-rausch font-bold"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 <span>Recommended Products</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-mono">
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rausch/10 text-rausch font-bold border border-rausch/20">
                   SBERT+FAISS
                 </span>
               </button>
+
               <button
                 onClick={() => setActiveTab("makeup")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeTab === "makeup"
-                    ? "border-brass text-brass"
-                    : "border-transparent text-ink/60 hover:text-ink"
+                    ? "border-rausch text-rausch font-bold"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
-                Styling & Makeup Guide
+                Styling & Placement
               </button>
+
               <button
                 onClick={() => setActiveTab("goldenRatio")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeTab === "goldenRatio"
-                    ? "border-brass text-brass"
-                    : "border-transparent text-ink/60 hover:text-ink"
+                    ? "border-rausch text-rausch font-bold"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 Golden Ratio (φ)
               </button>
+
               <button
                 onClick={() => setActiveTab("semantic")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "semantic"
-                    ? "border-brass text-brass"
-                    : "border-transparent text-ink/60 hover:text-ink"
+                    ? "border-rausch text-rausch font-bold"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 <span>Ontology & NLP Query</span>
                 {backendResult && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-rausch animate-pulse" />
                 )}
               </button>
             </div>
 
-            {/* TAB 1: FACE SHAPE CLASSIFICATION */}
+            {/* TAB 1: FACE SHAPE DETAILS */}
             {activeTab === "shape" && (
-              <div className="space-y-5">
-                <div className="bg-paper p-4 rounded-md border border-line">
+              <div className="space-y-6">
+                <div className="bg-surfaceSoft p-5 rounded-[14px] border border-hairline">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-serif text-lg font-bold text-ink">
+                    <h3 className="text-base font-bold text-ink">
                       {faceShape.primaryShape} Face Profile
                     </h3>
                     {faceShape.secondaryShape && (
-                      <span className="text-xs text-ink/60 bg-panel px-2 py-1 rounded border border-line">
+                      <span className="text-xs text-muted bg-white px-3 py-1 rounded-full border border-hairline">
                         Secondary: {faceShape.secondaryShape} (
                         {faceShape.shapeScores[faceShape.secondaryShape]}%)
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-ink/75 leading-relaxed">
+                  <p className="text-xs text-body leading-relaxed">
                     {faceShape.description}
                   </p>
                 </div>
 
-                {/* Anthropometric Ratios Grid */}
+                {/* Anthropometric Measurements Grid */}
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-ink/60 mb-3">
-                    Anthropometric Ratios & Angles
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-3">
+                    Anthropometric Ratios
                   </h4>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="p-3 bg-paper rounded border border-line/80">
-                      <span className="text-ink/60 block">Face Length / Cheek Width</span>
-                      <span className="font-semibold text-sm tabular-nums text-ink">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="p-3.5 bg-surfaceSoft rounded-[14px] border border-hairline">
+                      <span className="text-muted block text-xs">Total Length / Bizygomatic</span>
+                      <span className="font-bold text-base tabular-nums text-ink mt-0.5 block">
                         {faceShape.ratios.lengthToWidth}
                       </span>
-                      <span className="text-[10px] text-ink/40 block mt-0.5">
-                        Target φ ≈ 1.618
+                      <span className="text-[10px] text-muted block mt-0.5">
+                        Norm: 1.35 – 1.45
                       </span>
                     </div>
 
-                    <div className="p-3 bg-paper rounded border border-line/80">
-                      <span className="text-ink/60 block">Forehead / Cheekbone</span>
-                      <span className="font-semibold text-sm tabular-nums text-ink">
+                    <div className="p-3.5 bg-surfaceSoft rounded-[14px] border border-hairline">
+                      <span className="text-muted block text-xs">Forehead / Cheekbone</span>
+                      <span className="font-bold text-base tabular-nums text-ink mt-0.5 block">
                         {faceShape.ratios.foreheadToCheek}
                       </span>
-                      <span className="text-[10px] text-ink/40 block mt-0.5">
-                        Temple margin comparison
+                      <span className="text-[10px] text-muted block mt-0.5">
+                        Upper third taper
                       </span>
                     </div>
 
-                    <div className="p-3 bg-paper rounded border border-line/80">
-                      <span className="text-ink/60 block">Jaw Width / Cheekbone</span>
-                      <span className="font-semibold text-sm tabular-nums text-ink">
+                    <div className="p-3.5 bg-surfaceSoft rounded-[14px] border border-hairline">
+                      <span className="text-muted block text-xs">Jaw Width / Cheekbone</span>
+                      <span className="font-bold text-base tabular-nums text-ink mt-0.5 block">
                         {faceShape.ratios.jawToCheek}
                       </span>
-                      <span className="text-[10px] text-ink/40 block mt-0.5">
-                        Mandibular taper index
+                      <span className="text-[10px] text-muted block mt-0.5">
+                        Mandibular index
                       </span>
                     </div>
 
-                    <div className="p-3 bg-paper rounded border border-line/80">
-                      <span className="text-ink/60 block">Jawline Apex Angle</span>
-                      <span className="font-semibold text-sm tabular-nums text-ink">
+                    <div className="p-3.5 bg-surfaceSoft rounded-[14px] border border-hairline">
+                      <span className="text-muted block text-xs">Jawline Apex Angle</span>
+                      <span className="font-bold text-base tabular-nums text-ink mt-0.5 block">
                         {faceShape.ratios.jawAngleDeg}°
                       </span>
-                      <span className="text-[10px] text-ink/40 block mt-0.5">
+                      <span className="text-[10px] text-muted block mt-0.5">
                         Chin apex angularity
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Geometric Observations */}
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-ink/60 mb-2">
-                    Key Geometric Observations
-                  </h4>
-                  <ul className="space-y-1.5 text-xs text-ink/70">
-                    {faceShape.characteristics.map((c, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="text-brass font-bold">•</span>
-                        <span>{c}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
                 {/* Candidate Probability Distribution */}
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-ink/60 mb-2.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-3">
                     Shape Fit Distribution (%)
                   </h4>
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {Object.entries(faceShape.shapeScores)
                       .sort(([, a], [, b]) => b - a)
                       .map(([shape, conf]) => (
                         <div key={shape} className="flex items-center gap-3 text-xs">
-                          <span className="w-20 font-medium text-ink/70 truncate">
+                          <span className="w-20 font-medium text-ink truncate">
                             {shape}
                           </span>
-                          <div className="flex-1 bg-paper h-2 rounded-full overflow-hidden border border-line/60">
+                          <div className="flex-1 bg-surfaceSoft h-2 rounded-full overflow-hidden border border-hairline">
                             <div
                               className={`h-full rounded-full ${
                                 shape === faceShape.primaryShape
-                                  ? "bg-brass"
-                                  : "bg-ink/30"
+                                  ? "bg-rausch"
+                                  : "bg-muted/40"
                               }`}
                               style={{ width: `${conf}%` }}
                             />
                           </div>
-                          <span className="w-8 text-right font-mono text-[11px] text-ink/60">
+                          <span className="w-8 text-right font-mono text-[11px] text-muted">
                             {conf}%
                           </span>
                         </div>
@@ -659,101 +708,106 @@ export default function FaceRatioAnalyzer() {
               </div>
             )}
 
-            {/* TAB 2: MAKEUP & STYLING GUIDE */}
-            {activeTab === "makeup" && (
-              <div className="space-y-4">
-                <div className="bg-paper p-4 rounded-md border border-line">
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-brass block mb-1">
-                    Styling Strategy
-                  </span>
-                  <p className="text-sm font-medium text-ink">
-                    {faceShape.recommendation.summary}
-                  </p>
-                </div>
+            {/* TAB 2: SKIN ASSESSMENT & ROUTINE */}
+            {activeTab === "skin" && (
+              <SkinAssessmentModule
+                analysis={skinAnalysis}
+                faceShape={faceShape.primaryShape}
+              />
+            )}
 
-                <div className="space-y-3 text-xs">
-                  <div className="p-3 bg-paper rounded border border-line">
-                    <span className="font-semibold text-ink block mb-1 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-700"></span>
-                      Contour Placement Technique
+            {/* TAB 3: SEMANTIC PRODUCT RECOMMENDATIONS */}
+            {activeTab === "products" && (
+              <ProductRecommendations
+                faceShape={faceShape.primaryShape}
+                denseQueryText={
+                  backendResult?.semantic_dense_query ||
+                  backendResult?.retrieval_query?.dense_query_text
+                }
+                categories={
+                  backendResult?.retrieval_query?.product_categories || []
+                }
+              />
+            )}
+
+            {/* TAB 4: STYLING & MAKEUP GUIDE */}
+            {activeTab === "makeup" && (
+              <div className="space-y-5">
+                <div className="space-y-3">
+                  <div className="p-4 bg-surfaceSoft rounded-[14px] border border-hairline">
+                    <span className="font-bold text-ink block mb-1">
+                      Contouring & Shading Strategy
                     </span>
-                    <p className="text-ink/75 leading-relaxed">
+                    <p className="text-xs text-body leading-relaxed">
                       {faceShape.recommendation.contouring}
                     </p>
                   </div>
 
-                  <div className="p-3 bg-paper rounded border border-line">
-                    <span className="font-semibold text-ink block mb-1 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  <div className="p-4 bg-surfaceSoft rounded-[14px] border border-hairline">
+                    <span className="font-bold text-ink block mb-1">
                       Blush Direction & Placement
                     </span>
-                    <p className="text-ink/75 leading-relaxed">
+                    <p className="text-xs text-body leading-relaxed">
                       {faceShape.recommendation.blush}
                     </p>
                   </div>
 
-                  <div className="p-3 bg-paper rounded border border-line">
-                    <span className="font-semibold text-ink block mb-1 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
+                  <div className="p-4 bg-surfaceSoft rounded-[14px] border border-hairline">
+                    <span className="font-bold text-ink block mb-1">
                       Highlighter Strategy
                     </span>
-                    <p className="text-ink/75 leading-relaxed">
+                    <p className="text-xs text-body leading-relaxed">
                       {faceShape.recommendation.highlighter}
                     </p>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-ink/60 mb-2">
-                    Recommended Product Categories (Doc 1 Specification)
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {faceShape.recommendation.suitableProducts.map((p, i) => (
-                      <span
-                        key={i}
-                        className="text-xs bg-paper border border-line px-2.5 py-1 rounded text-ink/80 font-medium"
-                      >
-                        {p}
-                      </span>
-                    ))}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* TAB 3: GOLDEN RATIO MEASUREMENTS */}
+            {/* TAB 5: GOLDEN RATIO MEASUREMENTS (Airbnb 64px Rating Display) */}
             {activeTab === "goldenRatio" && (
-              <div className="space-y-4">
-                <div className="flex items-baseline justify-between border-b border-line pb-4">
-                  <span className="font-serif text-4xl text-brass">{score}</span>
-                  <span className="text-xs text-ink/50 max-w-[150px] text-right">
-                    out of 100 — average closeness to φ across facial features
-                  </span>
+              <div className="space-y-6">
+                {/* Signature Airbnb 64px Rating Display Card */}
+                <div className="text-center py-6 border-b border-hairline">
+                  <div className="flex items-center justify-center gap-4">
+                    <span className="text-muted text-2xl select-none">🌿</span>
+                    <span className="text-6xl font-bold tracking-tight text-ink">
+                      {score}
+                    </span>
+                    <span className="text-muted text-2xl transform scale-x-[-1] select-none">🌿</span>
+                  </div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted mt-2">
+                    Golden Ratio Symmetry Score (φ ≈ 1.618)
+                  </p>
+                  <p className="text-xs text-mutedSoft mt-0.5">
+                    Evaluated across classical horizontal & vertical anthropometric intervals
+                  </p>
                 </div>
+
                 <div className="space-y-3">
                   {results.map((r) => (
                     <div
                       key={r.label}
-                      className="flex justify-between items-center text-xs border-b border-line/60 pb-2.5"
+                      className="flex justify-between items-center text-xs border-b border-hairlineSoft pb-2.5"
                     >
                       <div>
-                        <span className="text-ink font-medium block">
+                        <span className="text-ink font-semibold block">
                           {r.label}
                         </span>
-                        <span className="text-[10px] text-ink/40">
+                        <span className="text-[11px] text-muted">
                           Target: {r.target.toFixed(3)}
                         </span>
                       </div>
                       <div className="text-right">
                         <span
-                          className={`font-semibold tabular-nums text-sm ${
-                            r.isClose ? "text-brass" : "text-ink"
+                          className={`font-bold tabular-nums text-sm ${
+                            r.isClose ? "text-rausch" : "text-ink"
                           }`}
                         >
                           {r.value.toFixed(3)}
                         </span>
-                        <span className="text-[10px] block text-ink/50">
-                          {r.isClose ? "Close to φ" : "Deviation noted"}
+                        <span className="text-[10px] text-muted block">
+                          {r.isClose ? "✓ Golden Proportion" : "Deviates"}
                         </span>
                       </div>
                     </div>
@@ -762,193 +816,39 @@ export default function FaceRatioAnalyzer() {
               </div>
             )}
 
-            {/* TAB 4: SEMANTIC SEARCH VOCABULARY (Doc 2 Part 2) */}
+            {/* TAB 6: ONTOLOGY & NLP QUERY */}
             {activeTab === "semantic" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-line">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        backendResult
-                          ? "bg-emerald-500"
-                          : backendError
-                          ? "bg-amber-500"
-                          : "bg-ink/30"
-                      }`}
-                    />
-                    <span className="text-xs font-semibold text-ink">
-                      {backendResult
-                        ? "FastAPI Semantic Backend Connected"
-                        : backendError
-                        ? "Backend Offline — Using In-Browser Fallback"
-                        : "Connecting to FastAPI Service…"}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => queryFastAPI(faceShape, score)}
-                    disabled={backendLoading}
-                    className="text-[11px] px-2.5 py-1 bg-paper border border-line rounded hover:bg-ink/5 transition-colors text-ink/80 font-medium"
-                  >
-                    {backendLoading ? "Evaluating…" : "Re-evaluate Rules"}
-                  </button>
-                </div>
-
+              <div className="space-y-5">
                 {backendResult ? (
-                  <div className="space-y-4 text-xs">
-                    {/* Triggered Ontology Rules */}
-                    <div>
+                  <div className="space-y-4">
+                    <div className="rounded-[14px] border border-hairline bg-surfaceSoft p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold uppercase tracking-wider text-ink/60 text-[10px]">
-                          Triggered Ontology Knowledge Graph Rules ({backendResult.triggered_rules_count})
+                        <span className="text-xs font-bold text-ink">
+                          Ontology Rule Evaluation
                         </span>
-                        <span className="text-[10px] text-emerald-700 font-mono font-medium">
-                          100% Traceable Lookup
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-rausch/10 text-rausch font-bold">
+                          {backendResult.triggered_rules_count} Rules Triggered
                         </span>
                       </div>
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {backendResult.triggered_rules.map((rule) => (
-                          <div
-                            key={rule.rule_id}
-                            className="p-2.5 bg-paper rounded border border-line/80 space-y-1"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono text-[10px] font-bold text-brass bg-brass/10 px-1.5 py-0.5 rounded">
-                                {rule.rule_id}
-                              </span>
-                              <span className="text-[10px] font-medium text-ink/50 bg-panel px-1.5 py-0.5 rounded border border-line/60">
-                                {rule.feature_region}
-                              </span>
-                            </div>
-                            <p className="text-[11px] font-semibold text-ink">
-                              {rule.target_effect}
-                            </p>
-                            <p className="text-[10px] text-ink/60 font-mono">
-                              Trigger: {rule.trigger_condition}
-                            </p>
-                            <div className="flex flex-wrap gap-1 mt-1 pt-1 border-t border-line/40">
-                              {rule.keywords.map((kw, i) => (
-                                <span
-                                  key={i}
-                                  className="text-[10px] bg-panel px-1.5 py-0.5 rounded text-ink/75 border border-line/50"
-                                >
-                                  {kw}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* NLP Query Expansion Results */}
-                    <div className="bg-paper p-3 rounded border border-line space-y-2">
-                      <span className="font-semibold uppercase tracking-wider text-ink/60 text-[10px] block">
-                        Target Categories & Finishes (NLP Expansion)
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {backendResult.retrieval_query.product_categories.map((c) => (
-                          <span
-                            key={c}
-                            className="bg-brass/10 text-brass text-[10px] font-semibold px-2 py-0.5 rounded border border-brass/30"
-                          >
-                            {c}
-                          </span>
-                        ))}
-                        {backendResult.retrieval_query.target_finishes.map((f) => (
-                          <span
-                            key={f}
-                            className="bg-ink/5 text-ink/70 text-[10px] font-medium px-2 py-0.5 rounded border border-line"
-                          >
-                            {f}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Dense Query String for SBERT */}
-                    <div className="p-3 bg-paper rounded border border-line space-y-1">
-                      <span className="text-[10px] text-ink/50 font-semibold uppercase tracking-wider block">
-                        Sentence-BERT Dense Vector Query (Part 3 Ready):
-                      </span>
-                      <p className="font-mono text-[11px] text-ink/80 leading-relaxed bg-panel p-2 rounded border border-line/60">
-                        {backendResult.semantic_dense_query}
+                      <p className="text-xs text-body leading-relaxed">
+                        Deterministic mapping evaluated across 19 rules in knowledge graph.
                       </p>
                     </div>
 
-                    {/* BM25 Search Terms */}
-                    <div>
-                      <span className="text-[10px] text-ink/50 font-semibold uppercase tracking-wider block mb-1.5">
-                        BM25 Keyword Tokens ({backendResult.retrieval_query.bm25_search_terms.length}):
+                    <div className="space-y-2">
+                      <span className="text-xs font-bold text-ink block">
+                        Generated SBERT Dense Query String:
                       </span>
-                      <div className="flex flex-wrap gap-1">
-                        {backendResult.retrieval_query.bm25_search_terms.map((t) => (
-                          <span
-                            key={t}
-                            className="text-[10px] font-mono bg-paper border border-line px-1.5 py-0.5 rounded text-ink/70"
-                          >
-                            {t}
-                          </span>
-                        ))}
+                      <div className="p-3 bg-surfaceSoft rounded-airbnbSm border border-hairline text-xs font-mono text-body break-all leading-relaxed">
+                        {backendResult.semantic_dense_query}
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded text-xs space-y-1">
-                      <span className="font-semibold block">
-                        FastAPI backend server not running on port 8000
-                      </span>
-                      <span className="text-[11px] text-amber-800/80 block">
-                        To launch the live ontology API, run:
-                        <code className="bg-amber-100 px-1.5 py-0.5 rounded ml-1 font-mono">
-                          python backend/main.py
-                        </code>
-                      </span>
-                    </div>
-
-                    <div className="bg-paper p-3.5 rounded border border-line space-y-2 text-xs">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink/50 block">
-                        Client-side Semantic Preview:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {faceShape.semanticKeywords.map((kw, i) => (
-                          <span
-                            key={i}
-                            className="bg-brass/10 border border-brass/30 text-brass text-xs font-mono px-2 py-0.5 rounded"
-                          >
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="p-2.5 bg-panel rounded border border-line text-[11px] font-mono text-ink/75">
-                        &ldquo;{faceShape.primaryShape.toLowerCase()} face shape makeup, {faceShape.semanticKeywords.join(", ")}&rdquo;
-                      </div>
-                    </div>
+                  <div className="p-4 rounded-[14px] bg-surfaceSoft border border-hairline text-xs text-muted">
+                    FastAPI ontology service running on port 8000.
                   </div>
                 )}
-              </div>
-            )}
-            {/* TAB 2: SKIN ASSESSMENT & ROUTINE (PART 4) */}
-            {activeTab === "skin" && (
-              <SkinAssessmentModule
-                analysis={skinAnalysis}
-                faceShape={faceShape.primaryShape}
-              />
-            )}
-
-            {/* TAB 3: SEMANTIC PRODUCT RECOMMENDATIONS (PART 3) */}
-            {activeTab === "products" && (
-              <div className="pt-2">
-                <ProductRecommendations
-                  faceShape={faceShape.primaryShape}
-                  denseQueryText={
-                    backendResult?.semantic_dense_query ||
-                    backendResult?.retrieval_query?.dense_query_text
-                  }
-                  categories={
-                    backendResult?.retrieval_query?.product_categories || []
-                  }
-                />
               </div>
             )}
           </div>

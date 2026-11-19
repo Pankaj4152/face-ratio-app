@@ -28,7 +28,6 @@ export default function SkinAssessmentModule({
   analysis,
   faceShape,
 }: SkinAssessmentModuleProps) {
-  // Derive initial skin type from computer vision metrics if available
   const initialSkinType: SkinType = useMemo(() => {
     if (!analysis) return "Combination";
     if (analysis.rednessCondition === "Noticeable (Sensitive / Rosacea)") return "Sensitive";
@@ -38,7 +37,6 @@ export default function SkinAssessmentModule({
     return "Normal";
   }, [analysis]);
 
-  // Derive initial concerns from computer vision
   const initialConcerns = useMemo<SkinConcern[]>(() => {
     const list: SkinConcern[] = [];
     if (!analysis) return ["Dullness & Uneven Texture"];
@@ -55,7 +53,6 @@ export default function SkinAssessmentModule({
   const [selectedConcerns, setSelectedConcerns] = useState<SkinConcern[]>(initialConcerns);
   const [activeTab, setActiveTab] = useState<"AM" | "PM" | "weekly">("AM");
 
-  // Generate personalized regimen
   const routine = useMemo(() => {
     return generateSkincareRoutine(selectedSkinType, selectedConcerns);
   }, [selectedSkinType, selectedConcerns]);
@@ -72,17 +69,17 @@ export default function SkinAssessmentModule({
 
   return (
     <div className="space-y-6">
-      {/* 1. Computer Vision Skin Diagnostic Cards */}
+      {/* 1. Computer Vision Diagnostic Metrics */}
       {analysis ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Tone & Hex Card */}
-          <div className="rounded-xl border border-line bg-paper p-3.5 space-y-2">
+          <div className="rounded-[14px] border border-hairline bg-white p-4 shadow-sm hover:shadow-airbnb transition space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink/60">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
                 Skin Tone & Melanin
               </span>
               <div
-                className="w-5 h-5 rounded-full border border-black/20 shadow-inner"
+                className="w-5 h-5 rounded-full border border-black/10 shadow-inner"
                 style={{ backgroundColor: analysis.hexColor }}
                 title={`Sampled Hex: ${analysis.hexColor}`}
               />
@@ -91,15 +88,15 @@ export default function SkinAssessmentModule({
               <p className="text-base font-bold text-ink">
                 {analysis.skinTone} Tone
               </p>
-              <p className="text-xs text-ink/60 font-mono">
+              <p className="text-xs text-muted font-mono mt-0.5">
                 Fitzpatrick {analysis.fitzpatrickScale} • {analysis.hexColor.toUpperCase()}
               </p>
             </div>
           </div>
 
           {/* Undertone Card */}
-          <div className="rounded-xl border border-line bg-paper p-3.5 space-y-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink/60 block">
+          <div className="rounded-[14px] border border-hairline bg-white p-4 shadow-sm hover:shadow-airbnb transition space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted block">
               Colorimetric Undertone
             </span>
             <div>
@@ -107,98 +104,92 @@ export default function SkinAssessmentModule({
                 <p className="text-base font-bold text-ink">
                   {analysis.undertone}
                 </p>
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-brass/10 text-brass border border-brass/30">
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rausch/10 text-rausch border border-rausch/20">
                   {analysis.undertoneConfidence}% conf
                 </span>
               </div>
-              <p className="text-xs text-ink/60 mt-0.5">
+              <p className="text-xs text-muted mt-0.5 line-clamp-1">
                 {analysis.undertone === "Warm"
-                  ? "Flattered by golden, peach, & bronze shades"
+                  ? "Golden/yellow dermal hue"
                   : analysis.undertone === "Cool"
-                  ? "Flattered by berry, rose, & silver shades"
-                  : "Balanced with both warm & cool pigments"}
+                  ? "Rose/berry dermal hue"
+                  : "Balanced dual pigments"}
               </p>
             </div>
           </div>
 
-          {/* T-Zone Shine / Sebum Index */}
-          <div className="rounded-xl border border-line bg-paper p-3.5 space-y-2">
+          {/* T-Zone Shine Index */}
+          <div className="rounded-[14px] border border-hairline bg-white p-4 shadow-sm hover:shadow-airbnb transition space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink/60">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
                 T-Zone Shine Index
               </span>
-              <span className="text-xs font-mono font-bold text-ink">
+              <span className="text-xs font-bold text-ink">
                 {analysis.tZoneShineScore}%
               </span>
             </div>
             <div>
-              <div className="h-1.5 w-full bg-ink/10 rounded-full overflow-hidden mb-1.5">
+              <div className="h-1.5 w-full bg-surfaceSoft rounded-full overflow-hidden mb-1.5">
                 <div
                   className={`h-full rounded-full ${
                     analysis.tZoneShineScore > 68
                       ? "bg-amber-500"
                       : analysis.tZoneShineScore < 38
                       ? "bg-blue-400"
-                      : "bg-emerald-500"
+                      : "bg-rausch"
                   }`}
                   style={{ width: `${analysis.tZoneShineScore}%` }}
                 />
               </div>
-              <p className="text-xs font-medium text-ink/75">
+              <p className="text-xs font-medium text-ink">
                 {analysis.tZoneCondition}
               </p>
             </div>
           </div>
 
-          {/* Erythema / Redness Score */}
-          <div className="rounded-xl border border-line bg-paper p-3.5 space-y-2">
+          {/* Cheek Redness / Erythema */}
+          <div className="rounded-[14px] border border-hairline bg-white p-4 shadow-sm hover:shadow-airbnb transition space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink/60">
-                Cheek Erythema (Redness)
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
+                Cheek Erythema
               </span>
-              <span className="text-xs font-mono font-bold text-ink">
+              <span className="text-xs font-bold text-ink">
                 {analysis.erythemaScore}%
               </span>
             </div>
             <div>
-              <div className="h-1.5 w-full bg-ink/10 rounded-full overflow-hidden mb-1.5">
+              <div className="h-1.5 w-full bg-surfaceSoft rounded-full overflow-hidden mb-1.5">
                 <div
-                  className={`h-full rounded-full ${
-                    analysis.erythemaScore > 60
-                      ? "bg-rose-500"
-                      : analysis.erythemaScore > 40
-                      ? "bg-amber-400"
-                      : "bg-emerald-500"
-                  }`}
+                  className="h-full rounded-full bg-rausch"
                   style={{ width: `${analysis.erythemaScore}%` }}
                 />
               </div>
-              <p className="text-xs font-medium text-ink/75">
+              <p className="text-xs font-medium text-ink truncate">
                 {analysis.rednessCondition}
               </p>
             </div>
           </div>
         </div>
       ) : (
-        <div className="rounded-xl border border-line bg-paper p-4 text-xs text-ink/60">
-          Upload or capture a front-facing portrait to enable real-time computer vision skin tone, undertone, and shine analysis.
+        <div className="rounded-[14px] border border-hairline bg-surfaceSoft p-4 text-xs text-muted">
+          Upload a portrait to calculate real-time computer vision skin tone, undertone, and T-zone shine.
         </div>
       )}
 
-      {/* 2. Interactive Clinical Skin Questionnaire */}
-      <div className="rounded-xl border border-line bg-panel p-5 space-y-5">
+      {/* 2. Clinical Diagnostic Questionnaire */}
+      <div className="rounded-[14px] border border-hairline bg-white p-5 space-y-5 shadow-sm">
         <div>
-          <h3 className="font-serif text-base font-bold text-ink">
+          <h3 className="text-base font-bold text-ink">
             Clinical Diagnostic Questionnaire
           </h3>
-          <p className="text-xs text-ink/60 mt-0.5">
-            Refine your physiological profile to generate customized active ingredient recommendations.
+          <p className="text-xs text-muted mt-0.5">
+            Refine your skin profile to generate active ingredient recommendations.
           </p>
         </div>
 
-        {/* Skin Type Selector */}
+        {/* Skin Type Pills */}
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wider text-ink/60 block mb-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2">
             1. Identified Skin Type
           </label>
           <div className="flex flex-wrap gap-2">
@@ -208,10 +199,10 @@ export default function SkinAssessmentModule({
                 <button
                   key={type}
                   onClick={() => setSelectedSkinType(type)}
-                  className={`text-xs px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                  className={`text-xs px-4 py-2 rounded-full font-medium transition cursor-pointer ${
                     isSelected
-                      ? "bg-brass text-paper font-semibold shadow-sm"
-                      : "bg-paper text-ink/70 border border-line hover:text-ink hover:border-ink/30"
+                      ? "bg-ink text-white font-semibold shadow-sm"
+                      : "bg-surfaceSoft text-body hover:bg-hairlineSoft border border-transparent"
                   }`}
                 >
                   {type}
@@ -221,9 +212,9 @@ export default function SkinAssessmentModule({
           </div>
         </div>
 
-        {/* Primary Concerns Multi-Select */}
+        {/* Primary Concerns Multi-Select Pills */}
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wider text-ink/60 block mb-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2">
             2. Primary Skin Concerns (Select all that apply)
           </label>
           <div className="flex flex-wrap gap-2">
@@ -233,10 +224,10 @@ export default function SkinAssessmentModule({
                 <button
                   key={concern}
                   onClick={() => toggleConcern(concern)}
-                  className={`text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`text-xs px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 cursor-pointer ${
                     isChecked
-                      ? "bg-ink text-paper font-medium shadow-sm"
-                      : "bg-paper text-ink/70 border border-line hover:text-ink hover:border-ink/40"
+                      ? "bg-rausch text-white font-medium shadow-sm"
+                      : "bg-surfaceSoft text-body hover:bg-hairlineSoft border border-transparent"
                   }`}
                 >
                   <span>{isChecked ? "✓" : "+"}</span>
@@ -249,18 +240,18 @@ export default function SkinAssessmentModule({
       </div>
 
       {/* 3. Hero Active Ingredients Callout */}
-      <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4">
+      <div className="rounded-[14px] border border-hairline bg-surfaceSoft p-4">
         <div className="flex items-start gap-3">
-          <span className="text-lg">🧪</span>
+          <span className="text-rausch font-bold text-lg">✦</span>
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-1">
-              Recommended Dermatological Actives for Your Profile:
+            <h4 className="text-xs font-bold uppercase tracking-wider text-ink mb-1">
+              Active Dermatological Ingredients for Your Profile:
             </h4>
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
+            <div className="flex flex-wrap gap-1.5 mt-2">
               {routine.heroIngredients.map((ing, i) => (
                 <span
                   key={i}
-                  className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-900/40 border border-emerald-500/30 text-emerald-200"
+                  className="text-xs font-medium px-3 py-1 rounded-full bg-white border border-hairline text-ink shadow-2xs"
                 >
                   {ing}
                 </span>
@@ -271,43 +262,43 @@ export default function SkinAssessmentModule({
       </div>
 
       {/* 4. Morning & Evening Routine Steps */}
-      <div className="rounded-xl border border-line bg-panel p-5 space-y-4">
+      <div className="rounded-[14px] border border-hairline bg-white p-5 space-y-4 shadow-sm">
         {/* Routine Tab Switcher */}
-        <div className="flex items-center justify-between border-b border-line pb-3">
+        <div className="flex items-center justify-between border-b border-hairline pb-3">
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTab("AM")}
-              className={`text-xs px-3.5 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              className={`text-xs px-4 py-2 rounded-full font-semibold transition cursor-pointer flex items-center gap-1.5 ${
                 activeTab === "AM"
-                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                  : "text-ink/60 hover:text-ink"
+                  ? "bg-ink text-white shadow-sm"
+                  : "bg-surfaceSoft text-muted hover:text-ink"
               }`}
             >
               <span>☀️</span> Morning Regimen (AM)
             </button>
             <button
               onClick={() => setActiveTab("PM")}
-              className={`text-xs px-3.5 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              className={`text-xs px-4 py-2 rounded-full font-semibold transition cursor-pointer flex items-center gap-1.5 ${
                 activeTab === "PM"
-                  ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
-                  : "text-ink/60 hover:text-ink"
+                  ? "bg-ink text-white shadow-sm"
+                  : "bg-surfaceSoft text-muted hover:text-ink"
               }`}
             >
               <span>🌙</span> Evening Regimen (PM)
             </button>
             <button
               onClick={() => setActiveTab("weekly")}
-              className={`text-xs px-3.5 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              className={`text-xs px-4 py-2 rounded-full font-semibold transition cursor-pointer flex items-center gap-1.5 ${
                 activeTab === "weekly"
-                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
-                  : "text-ink/60 hover:text-ink"
+                  ? "bg-ink text-white shadow-sm"
+                  : "bg-surfaceSoft text-muted hover:text-ink"
               }`}
             >
               <span>✨</span> Weekly Treatments
             </button>
           </div>
 
-          <span className="text-[11px] text-ink/50 font-mono hidden sm:inline-block">
+          <span className="text-xs text-muted hidden sm:inline-block">
             {activeTab === "AM" ? "4 Protective Steps" : activeTab === "PM" ? "4 Restorative Steps" : "2 Booster Cycles"}
           </span>
         </div>
@@ -318,25 +309,25 @@ export default function SkinAssessmentModule({
             {(activeTab === "AM" ? routine.amRoutine : routine.pmRoutine).map((step) => (
               <div
                 key={step.stepNumber}
-                className="rounded-lg border border-line bg-paper p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                className="rounded-airbnbSm border border-hairline bg-surfaceSoft p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ink/10 text-[11px] font-bold text-ink">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[11px] font-bold text-white">
                       {step.stepNumber}
                     </span>
-                    <span className="text-xs uppercase tracking-wider font-semibold text-brass">
+                    <span className="text-xs uppercase tracking-wider font-bold text-rausch">
                       {step.category}
                     </span>
                     <span className="text-xs font-bold text-ink">
                       {step.stepName}
                     </span>
                   </div>
-                  <p className="text-xs text-ink/75 pl-7">
+                  <p className="text-xs text-body pl-7">
                     {step.purpose}
                   </p>
-                  <p className="text-[11px] text-ink/50 pl-7 italic">
-                    💡 <strong>Application:</strong> {step.usageTip}
+                  <p className="text-[11px] text-muted pl-7">
+                    <strong>Tip:</strong> {step.usageTip}
                   </p>
                 </div>
 
@@ -344,7 +335,7 @@ export default function SkinAssessmentModule({
                   {step.keyIngredients.map((k, i) => (
                     <span
                       key={i}
-                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-panel border border-line text-ink/60"
+                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-white border border-hairline text-muted"
                     >
                       {k}
                     </span>
@@ -358,10 +349,10 @@ export default function SkinAssessmentModule({
             {routine.weeklyTreatments.map((treatment, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-line bg-paper p-3.5 flex items-start gap-3"
+                className="rounded-airbnbSm border border-hairline bg-surfaceSoft p-4 flex items-start gap-3"
               >
-                <span className="text-base">✦</span>
-                <p className="text-xs text-ink/80 leading-relaxed font-medium">
+                <span className="text-rausch font-bold">✦</span>
+                <p className="text-xs text-body leading-relaxed font-medium">
                   {treatment}
                 </p>
               </div>
@@ -369,15 +360,15 @@ export default function SkinAssessmentModule({
           </div>
         )}
 
-        {/* Safety Notes Callout */}
-        <div className="pt-3 border-t border-line">
-          <p className="text-[11px] font-semibold text-ink/60 uppercase tracking-wider mb-1.5">
+        {/* Precautions */}
+        <div className="pt-3 border-t border-hairline">
+          <p className="text-[11px] font-bold text-muted uppercase tracking-wider mb-1.5">
             Dermatological Usage Precautions:
           </p>
           <ul className="space-y-1">
             {routine.safetyNotes.map((note, idx) => (
-              <li key={idx} className="text-[11px] text-ink/60 flex items-start gap-1.5">
-                <span className="text-amber-500">⚠</span>
+              <li key={idx} className="text-[11px] text-muted flex items-start gap-1.5">
+                <span className="text-rausch">⚠</span>
                 <span>{note}</span>
               </li>
             ))}
