@@ -63,3 +63,82 @@ export async function fetchSemanticMapping(
 
   return response.json();
 }
+
+export interface ProductItem {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  sub_category?: string;
+  price: number;
+  rating: number;
+  review_count: number;
+  description: string;
+  key_benefits: string[];
+  target_face_shapes: string[];
+  target_skin_types: string[];
+  formulation: string;
+  finish: string;
+  image_url: string;
+  tags: string[];
+  similarity_score?: number;
+  match_percentage?: number;
+  shape_matched?: boolean;
+  recommendation_reason?: string;
+}
+
+export interface ProductSearchResponse {
+  status: string;
+  query: string;
+  total_results: number;
+  face_shape_applied?: string;
+  category_applied?: string;
+  engine: string;
+  products: ProductItem[];
+}
+
+export async function searchProducts(
+  query: string,
+  faceShape?: string,
+  category?: string,
+  skinType?: string,
+  topK: number = 8
+): Promise<ProductSearchResponse> {
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_BASE}/api/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      face_shape: faceShape,
+      category,
+      skin_type: skinType,
+      top_k: topK,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Semantic search API failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function listCatalogProducts(
+  category?: string,
+  faceShape?: string
+): Promise<{ status: string; total: number; products: ProductItem[] }> {
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const params = new URLSearchParams();
+  if (category) params.append("category", category);
+  if (faceShape) params.append("face_shape", faceShape);
+
+  const url = `${API_BASE}/api/products${params.toString() ? `?${params.toString()}` : ""}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to list products: ${response.status}`);
+  }
+  return response.json();
+}

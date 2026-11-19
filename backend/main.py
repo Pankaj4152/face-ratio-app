@@ -19,9 +19,13 @@ from pydantic import BaseModel, Field
 try:
     from ontology import OntologyEngine, FacialInputProfile, TriggeredRule
     from query_expansion import QueryExpander, ExpandedQueryResult
+    from catalog import get_all_products, get_products_by_category, get_products_by_face_shape
+    from semantic_search import search_engine
 except ImportError:
     from backend.ontology import OntologyEngine, FacialInputProfile, TriggeredRule
     from backend.query_expansion import QueryExpander, ExpandedQueryResult
+    from backend.catalog import get_all_products, get_products_by_category, get_products_by_face_shape
+    from backend.semantic_search import search_engine
 
 app = FastAPI(
     title="FaceSemantic - Facial Geometry Driven Product Retrieval API",
@@ -75,9 +79,12 @@ class RatioMappingResponse(BaseModel):
 def health_check():
     return {
         "status": "healthy",
-        "service": "FaceSemantic Ontology & Mapping Service",
+        "service": "FaceSemantic Ontology & Semantic Search Service",
         "version": "1.0.0",
         "registered_rules": len(ontology_engine.get_all_rules()),
+        "total_catalog_products": len(get_all_products()),
+        "search_engine_ready": search_engine.is_ready,
+        "embedding_model": search_engine.model_name,
     }
 
 
@@ -148,6 +155,72 @@ def map_facial_ratios_to_keywords(payload: RatioMappingRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ontology mapping failed: {str(e)}")
+
+
+class SearchRequest(BaseModel):
+    query: str
+    face_shape: Optional[str] = None
+    category: Optional[str] = None
+    skin_type: Optional[str] = None
+    top_k: Optional[int] = 6
+
+
+class SearchResponse(BaseModel):
+    status: str
+    query: str
+    total_results: int
+    face_shape_applied: Optional[str] = None
+    category_applied: Optional[str] = None
+    engine: str
+    products: List[Dict[str, Any]]
+
+
+@app.get("/api/products")
+def list_products(category: Optional[str] = None, face_shape: Optional[str] = None):
+    """
+    Returns the catalog products, optionally filtered by category or target face shape.
+    """
+    if face_shape:
+        items = get_products_by_face_shape(face_shape)
+    elif category:
+        items = get_products_by_category(category)
+    else:
+        items = get_all_products()
+
+    return {
+        "status": "success",
+        "total": len(items),
+        "products": items,
+    }
+
+
+@app.post("/api/search", response_model=SearchResponse)
+def semantic_search_products(payload: SearchRequest):
+    """
+    Part 3 Core Endpoint:
+    Executes Sentence-BERT dense vector embedding search with FAISS IndexFlatIP
+    and anthropometric geometry re-ranking over beauty & skincare products.
+    """
+    try:
+        results = search_engine.search(
+            query=payload.query,
+            face_shape=payload.face_shape,
+            category=payload.category,
+            skin_type=payload.skin_type,
+            top_k=payload.top_k or 6,
+        )
+
+        return SearchResponse(
+            status="success",
+            query=payload.query,
+            total_results=len(results),
+            face_shape_applied=payload.face_shape,
+            category_applied=payload.category,
+            engine="Sentence-BERT all-MiniLM-L6-v2 + FAISS IndexFlatIP",
+            products=results,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Semantic product search failed: {str(e)}")
 
 
 if __name__ == "__main__":

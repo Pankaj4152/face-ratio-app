@@ -15,9 +15,10 @@ import {
   fetchSemanticMapping,
   RatioMappingResponse,
 } from "@/lib/api";
+import ProductRecommendations from "@/components/ProductRecommendations";
 
 type Status = "loading" | "ready" | "error";
-type ActiveTab = "shape" | "goldenRatio" | "makeup" | "semantic";
+type ActiveTab = "shape" | "goldenRatio" | "makeup" | "semantic" | "products";
 
 export default function FaceRatioAnalyzer() {
   const [status, setStatus] = useState<Status>("loading");
@@ -493,10 +494,23 @@ export default function FaceRatioAnalyzer() {
                     : "border-transparent text-ink/60 hover:text-ink"
                 }`}
               >
-                <span>Semantic Retrieval (Part 2)</span>
+                <span>Ontology & NLP Query</span>
                 {backendResult && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 )}
+              </button>
+              <button
+                onClick={() => setActiveTab("products")}
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                  activeTab === "products"
+                    ? "border-violet-500 text-violet-400"
+                    : "border-transparent text-ink/60 hover:text-ink"
+                }`}
+              >
+                <span>Recommended Products</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-mono">
+                  SBERT+FAISS
+                </span>
               </button>
             </div>
 
@@ -883,6 +897,21 @@ export default function FaceRatioAnalyzer() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+            {/* TAB 5: SEMANTIC PRODUCT RECOMMENDATIONS (PART 3) */}
+            {activeTab === "products" && (
+              <div className="pt-2">
+                <ProductRecommendations
+                  faceShape={faceShape.primaryShape}
+                  denseQueryText={
+                    backendResult?.semantic_dense_query ||
+                    backendResult?.retrieval_query?.dense_query_text
+                  }
+                  categories={
+                    backendResult?.retrieval_query?.product_categories || []
+                  }
+                />
               </div>
             )}
           </div>
