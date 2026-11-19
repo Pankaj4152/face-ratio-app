@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "export",
+  images: {
+    unoptimized: true,
+  },
   webpack: (config) => {
     // Keep build cache in RAM instead of disk to prevent ENOSPC on drive D
     config.cache = {

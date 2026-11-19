@@ -14,6 +14,8 @@ if BACKEND_DIR not in sys.path:
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -222,6 +224,51 @@ def semantic_search_products(payload: SearchRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Semantic product search failed: {str(e)}")
+
+
+# -------------------------------------------------------------
+# Unified Deployment: Serve Next.js Frontend Static Files
+# -------------------------------------------------------------
+POSSIBLE_OUT_DIRS = [
+    os.path.abspath(os.path.join(BACKEND_DIR, "..", "out")),
+    os.path.abspath(os.path.join(BACKEND_DIR, "out")),
+    "/app/out",
+]
+OUT_DIR = None
+for d in POSSIBLE_OUT_DIRS:
+    if os.path.exists(d) and os.path.exists(os.path.join(d, "index.html")):
+        OUT_DIR = d
+        break
+
+if OUT_DIR:
+    print(f"[FaceSemantic] Serving unified frontend from {OUT_DIR}")
+    next_static_dir = os.path.join(OUT_DIR, "_next")
+    if os.path.exists(next_static_dir):
+        app.mount("/_next", StaticFiles(directory=next_static_dir), name="next-static")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(OUT_DIR, "index.html"))
+
+    @app.get("/{full_path:path}")
+    async def serve_spa_routes(full_path: str):
+        if full_path.startswith("api/") or full_path in ("health", "docs", "redoc", "openapi.json"):
+            raise HTTPException(status_code=404, detail="Not found")
+        target_file = os.path.join(OUT_DIR, full_path)
+        if os.path.isfile(target_file):
+            return FileResponse(target_file)
+        index_file = os.path.join(OUT_DIR, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        raise HTTPException(status_code=404, detail="Not found")
+else:
+    @app.get("/")
+    def root_status():
+        return {
+            "status": "healthy",
+            "service": "FaceSemantic API",
+            "message": "Backend running. Visit /docs for API endpoints.",
+        }
 
 
 if __name__ == "__main__":

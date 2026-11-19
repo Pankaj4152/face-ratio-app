@@ -31,9 +31,15 @@ export interface RatioMappingResponse {
 }
 
 export function getApiBase(): string {
+  if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL) {
+    // When served together by the same backend in production, use same-origin relative URL
+    if (window.location.port !== "3000") {
+      return "";
+    }
+  }
   let base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   base = base.trim().replace(/\/+$/, "");
-  if (!base.startsWith("http://") && !base.startsWith("https://")) {
+  if (base && !base.startsWith("http://") && !base.startsWith("https://")) {
     base = `https://${base}`;
   }
   return base;
