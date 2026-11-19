@@ -22,6 +22,71 @@ import { analyzeSkinFromCanvas, SkinAnalysisResult } from "@/lib/skinAnalysis";
 type Status = "loading" | "ready" | "error";
 export type ActiveTab = "shape" | "skin" | "products" | "makeup" | "goldenRatio" | "semantic";
 
+export function getPercentageBarColor(conf: number): {
+  color: string;
+  gradient: string;
+  textColor: string;
+  badgeBg: string;
+  badgeText: string;
+  label: string;
+} {
+  if (conf >= 80) {
+    return {
+      color: "#ff385c", // Airbnb Rausch
+      gradient: "from-[#ff385c] to-[#e00b41]",
+      textColor: "text-[#ff385c]",
+      badgeBg: "bg-[#ffe4e6]",
+      badgeText: "text-[#e11d48]",
+      label: "Dominant Match",
+    };
+  } else if (conf >= 65) {
+    return {
+      color: "#ff5a5f", // Coral
+      gradient: "from-[#ff5a5f] to-[#f43f5e]",
+      textColor: "text-[#f43f5e]",
+      badgeBg: "bg-[#fff1f2]",
+      badgeText: "text-[#f43f5e]",
+      label: "High Fit",
+    };
+  } else if (conf >= 50) {
+    return {
+      color: "#f97316", // Warm Orange (e.g. 52% Oval)
+      gradient: "from-[#fb923c] to-[#f97316]",
+      textColor: "text-[#f97316]",
+      badgeBg: "bg-[#ffedd5]",
+      badgeText: "text-[#c2410c]",
+      label: "Moderate Fit",
+    };
+  } else if (conf >= 35) {
+    return {
+      color: "#eab308", // Golden Amber
+      gradient: "from-[#fde047] to-[#eab308]",
+      textColor: "text-[#ca8a04]",
+      badgeBg: "bg-[#fef9c3]",
+      badgeText: "text-[#a16207]",
+      label: "Partial Fit",
+    };
+  } else if (conf >= 20) {
+    return {
+      color: "#0ea5e9", // Sky Blue
+      gradient: "from-[#38bdf8] to-[#0ea5e9]",
+      textColor: "text-[#0284c7]",
+      badgeBg: "bg-[#e0f2fe]",
+      badgeText: "text-[#0369a1]",
+      label: "Low Fit",
+    };
+  } else {
+    return {
+      color: "#94a3b8", // Slate Grey
+      gradient: "from-[#cbd5e1] to-[#94a3b8]",
+      textColor: "text-[#64748b]",
+      badgeBg: "bg-[#f1f5f9]",
+      badgeText: "text-[#64748b]",
+      label: "Minimal Fit",
+    };
+  }
+}
+
 interface FaceRatioAnalyzerProps {
   externalTab?: ActiveTab;
   onTabChange?: (tab: ActiveTab) => void;
@@ -545,27 +610,39 @@ export default function FaceRatioAnalyzer({
                 {[
                   { shape: "Oval", conf: 92, note: "Sample Primary (Harmonious 1.5:1 ratio)" },
                   { shape: "Heart", conf: 68, note: "Sample Secondary (Wide forehead taper)" },
-                  { shape: "Round", conf: 45, note: "Curved soft jawline" },
-                  { shape: "Diamond", conf: 34, note: "Prominent cheekbones" },
+                  { shape: "Round", conf: 52, note: "Curved soft jawline" },
+                  { shape: "Diamond", conf: 38, note: "Prominent cheekbones" },
                   { shape: "Oblong", conf: 28, note: "Vertical elongation" },
                   { shape: "Square", conf: 18, note: "Mandibular angle" },
                   { shape: "Rectangle", conf: 12, note: "Structured vertical lines" },
-                ].map((item) => (
-                  <div key={item.shape} className="flex items-center gap-3 text-xs">
-                    <span className="w-24 font-medium text-ink flex items-center justify-between">
-                      <span>{item.shape}</span>
-                    </span>
-                    <div className="flex-1 bg-white h-2.5 rounded-full overflow-hidden border border-hairline">
-                      <div
-                        className="h-full rounded-full bg-rausch/30"
-                        style={{ width: `${item.conf}%` }}
-                      />
+                ].map((item) => {
+                  const colorMeta = getPercentageBarColor(item.conf);
+                  return (
+                    <div key={item.shape} className="flex items-center gap-3 text-xs p-1.5 rounded-lg hover:bg-white transition-colors">
+                      <span className="w-24 font-medium text-ink flex items-center justify-between">
+                        <span>{item.shape}</span>
+                      </span>
+                      <div className="flex-1 bg-white h-3 rounded-full overflow-hidden border border-hairline">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 shadow-sm"
+                          style={{
+                            width: `${item.conf}%`,
+                            backgroundColor: colorMeta.color,
+                          }}
+                        />
+                      </div>
+                      <span
+                        className="w-10 text-right font-mono text-xs font-bold tabular-nums"
+                        style={{ color: colorMeta.color }}
+                      >
+                        {item.conf}%
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium hidden sm:inline-block ${colorMeta.badgeBg} ${colorMeta.badgeText}`}>
+                        {colorMeta.label}
+                      </span>
                     </div>
-                    <span className="w-12 text-right font-mono text-[11px] text-muted">
-                      {item.conf}%
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="pt-2 border-t border-hairline/80 flex items-center justify-between">
@@ -765,17 +842,19 @@ export default function FaceRatioAnalyzer({
                       .map(([shape, conf]) => {
                         const isPrimary = shape === faceShape.primaryShape;
                         const isSecondary = shape === faceShape.secondaryShape;
+                        const colorMeta = getPercentageBarColor(conf);
+
                         return (
                           <div
                             key={shape}
                             className={`flex items-center gap-3 text-xs p-2.5 rounded-airbnbSm transition-all ${
                               isPrimary
-                                ? "bg-white border border-hairline shadow-sm"
+                                ? "bg-white border border-hairline shadow-sm ring-1 ring-black/5"
                                 : "hover:bg-white/60"
                             }`}
                           >
                             <div className="w-24 font-medium text-ink flex items-center gap-1.5">
-                              <span className={isPrimary ? "font-bold text-rausch" : ""}>
+                              <span className={isPrimary ? "font-bold text-ink" : ""}>
                                 {shape}
                               </span>
                               {isPrimary && (
@@ -790,25 +869,28 @@ export default function FaceRatioAnalyzer({
                               )}
                             </div>
 
+                            {/* Percentage-Calibrated Color Bar */}
                             <div className="flex-1 bg-surfaceSoft h-3 rounded-full overflow-hidden border border-hairline/80">
                               <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  isPrimary
-                                    ? "bg-rausch shadow-sm shadow-rausch/30"
-                                    : isSecondary
-                                    ? "bg-ink/70"
-                                    : "bg-muted/30"
-                                }`}
-                                style={{ width: `${conf}%` }}
+                                className="h-full rounded-full transition-all duration-700 shadow-sm"
+                                style={{
+                                  width: `${conf}%`,
+                                  backgroundColor: colorMeta.color,
+                                }}
                               />
                             </div>
 
+                            {/* Colored Percentage Output */}
                             <span
-                              className={`w-10 text-right font-mono text-xs tabular-nums ${
-                                isPrimary ? "font-bold text-rausch" : "text-muted"
-                              }`}
+                              className="w-10 text-right font-mono text-xs font-bold tabular-nums"
+                              style={{ color: colorMeta.color }}
                             >
                               {conf}%
+                            </span>
+
+                            {/* Dynamic Percentage Tier Badge */}
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium hidden sm:inline-block ${colorMeta.badgeBg} ${colorMeta.badgeText}`}>
+                              {colorMeta.label}
                             </span>
                           </div>
                         );
