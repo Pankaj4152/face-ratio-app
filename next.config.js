@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   webpack: (config) => {
+    // Keep build cache in RAM instead of disk to prevent ENOSPC on drive D
+    config.cache = {
+      type: "memory",
+    };
+
     config.plugins.push({
       apply(compiler) {
         compiler.hooks.normalModuleFactory.tap("CrossDriveFixPlugin", (nmf) => {
