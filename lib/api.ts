@@ -48,7 +48,8 @@ export async function fetchSemanticMapping(
     secondary_shape: faceShape.secondaryShape,
   };
 
-  const response = await fetch("http://localhost:8000/api/map-ratio", {
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_BASE}/api/map-ratio`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
