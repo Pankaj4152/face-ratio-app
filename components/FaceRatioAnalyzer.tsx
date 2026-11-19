@@ -106,6 +106,7 @@ export default function FaceRatioAnalyzer({
   const [skinAnalysis, setSkinAnalysis] = useState<SkinAnalysisResult | null>(null);
   const [noFace, setNoFace] = useState(false);
   const [internalTab, setInternalTab] = useState<ActiveTab>("shape");
+  const [isDragging, setIsDragging] = useState(false);
 
   const activeTab = externalTab || internalTab;
   const setActiveTab = (tab: ActiveTab) => {
@@ -410,10 +411,7 @@ export default function FaceRatioAnalyzer({
     }
   }, [drawVisuals]);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = (file: File) => {
     const url = URL.createObjectURL(file);
     setImgSrc(url);
 
@@ -424,6 +422,20 @@ export default function FaceRatioAnalyzer({
       currentImageRef.current = img;
       runDetection(img);
     };
+  };
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      processFile(file);
+    }
   };
 
   const loadSample = (sampleUrl: string) => {
@@ -441,27 +453,47 @@ export default function FaceRatioAnalyzer({
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* LEFT: Photo Canvas Plate (5 Cols) */}
       <div className="lg:col-span-5 space-y-4">
-        <div className="relative aspect-[3/4] w-full rounded-[14px] overflow-hidden bg-surfaceSoft border border-hairline shadow-airbnb flex items-center justify-center">
+        {/* Interactive Clickable & Drag-and-Drop Dropzone Container */}
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          className={`relative aspect-[3/4] w-full rounded-[14px] overflow-hidden transition-all cursor-pointer group flex items-center justify-center border ${
+            isDragging
+              ? "border-rausch bg-rausch/5 ring-4 ring-rausch/20 shadow-airbnbHover"
+              : "border-hairline bg-surfaceSoft hover:border-rausch/50 hover:bg-surfaceSoft/90 shadow-airbnb"
+          }`}
+          title="Click to select or change portrait photo"
+        >
           {imgSrc ? (
-            <canvas ref={canvasRef} className="w-full h-full object-contain" />
+            <>
+              <canvas ref={canvasRef} className="w-full h-full object-contain" />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                <span className="text-xs font-semibold px-4 py-2 rounded-full bg-white text-ink shadow-md flex items-center gap-1.5">
+                  <span>📷</span> Click to Change Photo
+                </span>
+              </div>
+            </>
           ) : (
             <div className="text-center p-8 space-y-3">
-              <div className="w-14 h-14 mx-auto rounded-full bg-rausch/10 text-rausch flex items-center justify-center text-2xl font-bold">
+              <div className="w-16 h-16 mx-auto rounded-full bg-rausch/10 text-rausch flex items-center justify-center text-3xl font-bold group-hover:scale-110 group-hover:bg-rausch group-hover:text-white transition-all shadow-sm">
                 📷
               </div>
-              <p className="text-sm font-semibold text-ink">
-                No Portrait Selected
+              <p className="text-base font-bold text-ink group-hover:text-rausch transition-colors">
+                Click to Select Portrait Photo
               </p>
-              <p className="text-xs text-muted max-w-xs mx-auto">
-                Upload a front-facing portrait to analyze facial thirds, bone contours, skin undertones, and semantic products.
+              <p className="text-xs text-muted max-w-xs mx-auto leading-relaxed">
+                Click anywhere in this box or drag & drop an image to automatically analyze facial shape, skin tone, and products.
               </p>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={status !== "ready"}
-                className="mt-2 text-xs px-5 py-2.5 rounded-airbnbSm bg-rausch hover:bg-rausch-active text-white font-medium transition shadow-sm cursor-pointer disabled:opacity-50"
-              >
-                Upload Front Portrait
-              </button>
+              <div className="pt-2">
+                <span className="inline-block text-xs px-5 py-2.5 rounded-airbnbSm bg-rausch hover:bg-rausch-active text-white font-semibold transition shadow-sm group-hover:shadow-md">
+                  Choose Photo File
+                </span>
+              </div>
             </div>
           )}
         </div>
