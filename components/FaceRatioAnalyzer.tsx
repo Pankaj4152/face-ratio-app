@@ -11,6 +11,10 @@ import {
   FACE_SHAPE_CONTOUR_INDICES,
   Landmark,
 } from "@/lib/landmarks";
+import {
+  fetchSemanticMapping,
+  RatioMappingResponse,
+} from "@/lib/api";
 
 type Status = "loading" | "ready" | "error";
 type ActiveTab = "shape" | "goldenRatio" | "makeup" | "semantic";
@@ -23,6 +27,11 @@ export default function FaceRatioAnalyzer() {
   const [faceShape, setFaceShape] = useState<FaceShapeResult | null>(null);
   const [noFace, setNoFace] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("shape");
+
+  // Part 2: FastAPI Semantic Backend State
+  const [backendResult, setBackendResult] = useState<RatioMappingResponse | null>(null);
+  const [backendLoading, setBackendLoading] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   // Canvas visual toggles
   const [showWireframe, setShowWireframe] = useState(true);
@@ -68,6 +77,20 @@ export default function FaceRatioAnalyzer() {
     };
   }, []);
 
+  const queryFastAPI = useCallback(async (shape: FaceShapeResult, goldenScore: number | null) => {
+    setBackendLoading(true);
+    setBackendError(null);
+    try {
+      const data = await fetchSemanticMapping(shape, goldenScore);
+      setBackendResult(data);
+    } catch (err: any) {
+      console.warn("FastAPI backend not reachable:", err.message);
+      setBackendError(err.message || "FastAPI server unreachable on port 8000");
+    } finally {
+      setBackendLoading(false);
+    }
+  }, []);
+
   const drawVisuals = useCallback(
     (landmarks: Landmark[], w: number, h: number) => {
       const canvas = canvasRef.current;
@@ -100,13 +123,13 @@ export default function FaceRatioAnalyzer() {
           ctx.lineTo(pt.x * w, pt.y * h);
         }
         ctx.closePath();
-        ctx.strokeStyle = "rgba(184, 134, 11, 0.75)"; // Brass golden line
+        ctx.strokeStyle = "rgba(184, 134, 11, 0.75)";
         ctx.lineWidth = Math.max(2, w / 260);
         ctx.stroke();
         ctx.fillStyle = "rgba(184, 134, 11, 0.08)";
         ctx.fill();
 
-        // Horizontal measurement axis: Forehead, Cheekbone, Jawline
+        // Horizontal measurement axis
         const drawHLine = (p1Idx: number, p2Idx: number, color: string) => {
           const p1 = landmarks[p1Idx];
           const p2 = landmarks[p2Idx];
@@ -120,12 +143,9 @@ export default function FaceRatioAnalyzer() {
           ctx.setLineDash([]);
         };
 
-        // Forehead width line (103 - 332)
-        drawHLine(103, 332, "rgba(70, 130, 180, 0.75)");
-        // Cheekbone width line (234 - 454)
-        drawHLine(234, 454, "rgba(184, 134, 11, 0.85)");
-        // Jaw width line (172 - 397)
-        drawHLine(172, 397, "rgba(205, 92, 92, 0.75)");
+        drawHLine(103, 332, "rgba(70, 130, 180, 0.75)"); // Forehead
+        drawHLine(234, 454, "rgba(184, 134, 11, 0.85)"); // Cheekbone
+        drawHLine(172, 397, "rgba(205, 92, 92, 0.75)"); // Jaw
       }
 
       // 3. Facial Thirds reference lines
@@ -152,7 +172,6 @@ export default function FaceRatioAnalyzer() {
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Shadowed text label
           ctx.fillStyle = "rgba(0,0,0,0.6)";
           ctx.fillText(tp.label, 12, y - 5);
           ctx.fillStyle = "#EAE6DF";
@@ -196,6 +215,7 @@ export default function FaceRatioAnalyzer() {
         setResults(null);
         setScore(null);
         setFaceShape(null);
+        setBackendResult(null);
         currentLandmarksRef.current = null;
         return;
       }
@@ -223,8 +243,11 @@ export default function FaceRatioAnalyzer() {
 
       // 3. Render Canvas Overlays
       drawVisuals(landmarks, canvas.width, canvas.height);
+
+      // 4. Trigger Part 2 FastAPI Semantic Mapping
+      queryFastAPI(classifiedShape, overallScore);
     },
-    [drawVisuals]
+    [drawVisuals, queryFastAPI]
   );
 
   // Redraw overlays when canvas toggles change
@@ -291,7 +314,7 @@ export default function FaceRatioAnalyzer() {
                 Upload a front-facing portrait photo
               </span>
               <span className="text-xs text-ink/40 max-w-xs">
-                Photos are analyzed entirely in your browser using MediaPipe FaceMesh. No images are sent to any external server.
+                Photos are analyzed in-browser via MediaPipe FaceMesh. Ratios map to semantic search queries via the FastAPI backend.
               </span>
             </div>
           )}
@@ -424,13 +447,16 @@ export default function FaceRatioAnalyzer() {
               </button>
               <button
                 onClick={() => setActiveTab("semantic")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
                   activeTab === "semantic"
                     ? "border-brass text-brass"
                     : "border-transparent text-ink/60 hover:text-ink"
                 }`}
               >
-                Semantic Retrieval Query
+                <span>Semantic Retrieval (Part 2)</span>
+                {backendResult && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                )}
               </button>
             </div>
 
@@ -550,7 +576,7 @@ export default function FaceRatioAnalyzer() {
               </div>
             )}
 
-            {/* TAB 2: MAKEUP & STYLING GUIDE (Doc 1 Requirement) */}
+            {/* TAB 2: MAKEUP & STYLING GUIDE */}
             {activeTab === "makeup" && (
               <div className="space-y-4">
                 <div className="bg-paper p-4 rounded-md border border-line">
@@ -653,40 +679,170 @@ export default function FaceRatioAnalyzer() {
               </div>
             )}
 
-            {/* TAB 4: SEMANTIC SEARCH VOCABULARY (Doc 2 Part 2 Preview) */}
+            {/* TAB 4: SEMANTIC SEARCH VOCABULARY (Doc 2 Part 2) */}
             {activeTab === "semantic" && (
               <div className="space-y-4">
-                <div className="bg-paper p-4 rounded-md border border-line text-xs">
-                  <h4 className="font-bold text-ink mb-1 text-sm">
-                    Ratio-to-Keyword Semantic Mapping (Part 2)
-                  </h4>
-                  <p className="text-ink/70 leading-relaxed">
-                    According to the <strong>FaceSemantic</strong> architecture, facial geometry is mapped into transparent semantic keywords used as query embeddings in Apache Spark & SBERT for product retrieval.
-                  </p>
-                </div>
-
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-ink/60 block mb-2">
-                    Generated Retrieval Keywords:
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {faceShape.semanticKeywords.map((kw, i) => (
-                      <span
-                        key={i}
-                        className="bg-brass/10 border border-brass/30 text-brass text-xs font-mono px-3 py-1 rounded"
-                      >
-                        {kw}
-                      </span>
-                    ))}
+                <div className="flex items-center justify-between pb-2 border-b border-line">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        backendResult
+                          ? "bg-emerald-500"
+                          : backendError
+                          ? "bg-amber-500"
+                          : "bg-ink/30"
+                      }`}
+                    />
+                    <span className="text-xs font-semibold text-ink">
+                      {backendResult
+                        ? "FastAPI Semantic Backend Connected"
+                        : backendError
+                        ? "Backend Offline — Using In-Browser Fallback"
+                        : "Connecting to FastAPI Service…"}
+                    </span>
                   </div>
+                  <button
+                    onClick={() => queryFastAPI(faceShape, score)}
+                    disabled={backendLoading}
+                    className="text-[11px] px-2.5 py-1 bg-paper border border-line rounded hover:bg-ink/5 transition-colors text-ink/80 font-medium"
+                  >
+                    {backendLoading ? "Evaluating…" : "Re-evaluate Rules"}
+                  </button>
                 </div>
 
-                <div className="p-3 bg-paper rounded border border-line text-xs text-ink/60 font-mono">
-                  <span className="text-[10px] text-ink/40 block mb-1 uppercase">
-                    Constructed Dense Query String:
-                  </span>
-                  &ldquo;{faceShape.primaryShape.toLowerCase()} face shape makeup, {faceShape.semanticKeywords.join(", ")}&rdquo;
-                </div>
+                {backendResult ? (
+                  <div className="space-y-4 text-xs">
+                    {/* Triggered Ontology Rules */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold uppercase tracking-wider text-ink/60 text-[10px]">
+                          Triggered Ontology Knowledge Graph Rules ({backendResult.triggered_rules_count})
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-mono font-medium">
+                          100% Traceable Lookup
+                        </span>
+                      </div>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {backendResult.triggered_rules.map((rule) => (
+                          <div
+                            key={rule.rule_id}
+                            className="p-2.5 bg-paper rounded border border-line/80 space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[10px] font-bold text-brass bg-brass/10 px-1.5 py-0.5 rounded">
+                                {rule.rule_id}
+                              </span>
+                              <span className="text-[10px] font-medium text-ink/50 bg-panel px-1.5 py-0.5 rounded border border-line/60">
+                                {rule.feature_region}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-semibold text-ink">
+                              {rule.target_effect}
+                            </p>
+                            <p className="text-[10px] text-ink/60 font-mono">
+                              Trigger: {rule.trigger_condition}
+                            </p>
+                            <div className="flex flex-wrap gap-1 mt-1 pt-1 border-t border-line/40">
+                              {rule.keywords.map((kw, i) => (
+                                <span
+                                  key={i}
+                                  className="text-[10px] bg-panel px-1.5 py-0.5 rounded text-ink/75 border border-line/50"
+                                >
+                                  {kw}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* NLP Query Expansion Results */}
+                    <div className="bg-paper p-3 rounded border border-line space-y-2">
+                      <span className="font-semibold uppercase tracking-wider text-ink/60 text-[10px] block">
+                        Target Categories & Finishes (NLP Expansion)
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {backendResult.retrieval_query.product_categories.map((c) => (
+                          <span
+                            key={c}
+                            className="bg-brass/10 text-brass text-[10px] font-semibold px-2 py-0.5 rounded border border-brass/30"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                        {backendResult.retrieval_query.target_finishes.map((f) => (
+                          <span
+                            key={f}
+                            className="bg-ink/5 text-ink/70 text-[10px] font-medium px-2 py-0.5 rounded border border-line"
+                          >
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dense Query String for SBERT */}
+                    <div className="p-3 bg-paper rounded border border-line space-y-1">
+                      <span className="text-[10px] text-ink/50 font-semibold uppercase tracking-wider block">
+                        Sentence-BERT Dense Vector Query (Part 3 Ready):
+                      </span>
+                      <p className="font-mono text-[11px] text-ink/80 leading-relaxed bg-panel p-2 rounded border border-line/60">
+                        {backendResult.semantic_dense_query}
+                      </p>
+                    </div>
+
+                    {/* BM25 Search Terms */}
+                    <div>
+                      <span className="text-[10px] text-ink/50 font-semibold uppercase tracking-wider block mb-1.5">
+                        BM25 Keyword Tokens ({backendResult.retrieval_query.bm25_search_terms.length}):
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {backendResult.retrieval_query.bm25_search_terms.map((t) => (
+                          <span
+                            key={t}
+                            className="text-[10px] font-mono bg-paper border border-line px-1.5 py-0.5 rounded text-ink/70"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded text-xs space-y-1">
+                      <span className="font-semibold block">
+                        FastAPI backend server not running on port 8000
+                      </span>
+                      <span className="text-[11px] text-amber-800/80 block">
+                        To launch the live ontology API, run:
+                        <code className="bg-amber-100 px-1.5 py-0.5 rounded ml-1 font-mono">
+                          python backend/main.py
+                        </code>
+                      </span>
+                    </div>
+
+                    <div className="bg-paper p-3.5 rounded border border-line space-y-2 text-xs">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink/50 block">
+                        Client-side Semantic Preview:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {faceShape.semanticKeywords.map((kw, i) => (
+                          <span
+                            key={i}
+                            className="bg-brass/10 border border-brass/30 text-brass text-xs font-mono px-2 py-0.5 rounded"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="p-2.5 bg-panel rounded border border-line text-[11px] font-mono text-ink/75">
+                        &ldquo;{faceShape.primaryShape.toLowerCase()} face shape makeup, {faceShape.semanticKeywords.join(", ")}&rdquo;
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
