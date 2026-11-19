@@ -523,6 +523,74 @@ export default function FaceRatioAnalyzer({
           </div>
         )}
 
+        {!faceShape && !noFace && (
+          <div className="space-y-6 py-2">
+            <div className="rounded-[14px] border border-hairline bg-surfaceSoft p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-ink">
+                    Shape Fit Distribution Preview
+                  </h3>
+                  <p className="text-xs text-muted mt-0.5">
+                    Upload a portrait to compute your real-time anthropometric confidence scores across all 7 facial shapes.
+                  </p>
+                </div>
+                <span className="text-xs px-3 py-1 rounded-full bg-rausch/10 text-rausch font-bold border border-rausch/20">
+                  Ready to Analyze
+                </span>
+              </div>
+
+              {/* Sample Preview Bars */}
+              <div className="space-y-3 pt-2">
+                {[
+                  { shape: "Oval", conf: 92, note: "Sample Primary (Harmonious 1.5:1 ratio)" },
+                  { shape: "Heart", conf: 68, note: "Sample Secondary (Wide forehead taper)" },
+                  { shape: "Round", conf: 45, note: "Curved soft jawline" },
+                  { shape: "Diamond", conf: 34, note: "Prominent cheekbones" },
+                  { shape: "Oblong", conf: 28, note: "Vertical elongation" },
+                  { shape: "Square", conf: 18, note: "Mandibular angle" },
+                  { shape: "Rectangle", conf: 12, note: "Structured vertical lines" },
+                ].map((item) => (
+                  <div key={item.shape} className="flex items-center gap-3 text-xs">
+                    <span className="w-24 font-medium text-ink flex items-center justify-between">
+                      <span>{item.shape}</span>
+                    </span>
+                    <div className="flex-1 bg-white h-2.5 rounded-full overflow-hidden border border-hairline">
+                      <div
+                        className="h-full rounded-full bg-rausch/30"
+                        style={{ width: `${item.conf}%` }}
+                      />
+                    </div>
+                    <span className="w-12 text-right font-mono text-[11px] text-muted">
+                      {item.conf}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-2 border-t border-hairline/80 flex items-center justify-between">
+                <span className="text-xs text-muted">
+                  Quick test with a sample photo:
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => loadSample("https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80")}
+                    className="text-xs px-3.5 py-1.5 rounded-full bg-rausch text-white font-medium hover:bg-rausch-active transition cursor-pointer"
+                  >
+                    Load Sample 1
+                  </button>
+                  <button
+                    onClick={() => loadSample("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80")}
+                    className="text-xs px-3.5 py-1.5 rounded-full bg-white border border-hairline text-ink font-medium hover:bg-surfaceSoft transition cursor-pointer"
+                  >
+                    Load Sample 2
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {faceShape && results && (
           <div>
             {/* Airbnb Tab Switcher */}
@@ -676,33 +744,75 @@ export default function FaceRatioAnalyzer({
                 </div>
 
                 {/* Candidate Probability Distribution */}
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-3">
-                    Shape Fit Distribution (%)
-                  </h4>
-                  <div className="space-y-2.5">
+                <div className="rounded-[14px] border border-hairline bg-surfaceSoft p-5 space-y-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-ink">
+                        Shape Fit Distribution (%)
+                      </h4>
+                      <p className="text-xs text-muted mt-0.5">
+                        Anthropometric confidence computed from bizygomatic width, jawline angle, and facial thirds
+                      </p>
+                    </div>
+                    <span className="text-xs px-3 py-1 rounded-full bg-rausch text-white font-bold shadow-sm">
+                      {faceShape.primaryShape}: {faceShape.confidence}% Match
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5 pt-1">
                     {Object.entries(faceShape.shapeScores)
                       .sort(([, a], [, b]) => b - a)
-                      .map(([shape, conf]) => (
-                        <div key={shape} className="flex items-center gap-3 text-xs">
-                          <span className="w-20 font-medium text-ink truncate">
-                            {shape}
-                          </span>
-                          <div className="flex-1 bg-surfaceSoft h-2 rounded-full overflow-hidden border border-hairline">
-                            <div
-                              className={`h-full rounded-full ${
-                                shape === faceShape.primaryShape
-                                  ? "bg-rausch"
-                                  : "bg-muted/40"
+                      .map(([shape, conf]) => {
+                        const isPrimary = shape === faceShape.primaryShape;
+                        const isSecondary = shape === faceShape.secondaryShape;
+                        return (
+                          <div
+                            key={shape}
+                            className={`flex items-center gap-3 text-xs p-2.5 rounded-airbnbSm transition-all ${
+                              isPrimary
+                                ? "bg-white border border-hairline shadow-sm"
+                                : "hover:bg-white/60"
+                            }`}
+                          >
+                            <div className="w-24 font-medium text-ink flex items-center gap-1.5">
+                              <span className={isPrimary ? "font-bold text-rausch" : ""}>
+                                {shape}
+                              </span>
+                              {isPrimary && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rausch/10 text-rausch font-bold uppercase">
+                                  Top
+                                </span>
+                              )}
+                              {isSecondary && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-black/5 text-muted font-bold uppercase">
+                                  2nd
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex-1 bg-surfaceSoft h-3 rounded-full overflow-hidden border border-hairline/80">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  isPrimary
+                                    ? "bg-rausch shadow-sm shadow-rausch/30"
+                                    : isSecondary
+                                    ? "bg-ink/70"
+                                    : "bg-muted/30"
+                                }`}
+                                style={{ width: `${conf}%` }}
+                              />
+                            </div>
+
+                            <span
+                              className={`w-10 text-right font-mono text-xs tabular-nums ${
+                                isPrimary ? "font-bold text-rausch" : "text-muted"
                               }`}
-                              style={{ width: `${conf}%` }}
-                            />
+                            >
+                              {conf}%
+                            </span>
                           </div>
-                          <span className="w-8 text-right font-mono text-[11px] text-muted">
-                            {conf}%
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 </div>
               </div>
