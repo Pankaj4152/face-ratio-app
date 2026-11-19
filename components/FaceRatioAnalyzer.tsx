@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import SkinAssessmentModule from "@/components/SkinAssessmentModule";
+import StylingAndPlacementGuide from "@/components/StylingAndPlacementGuide";
 import { analyzeSkinFromCanvas, SkinAnalysisResult } from "@/lib/skinAnalysis";
 
 type Status = "loading" | "ready" | "error";
@@ -956,36 +957,10 @@ export default function FaceRatioAnalyzer({
 
             {/* TAB 4: STYLING & MAKEUP GUIDE */}
             {activeTab === "makeup" && (
-              <div className="space-y-5">
-                <div className="space-y-3">
-                  <div className="p-4 bg-surfaceSoft rounded-[14px] border border-hairline">
-                    <span className="font-bold text-ink block mb-1">
-                      Contouring & Shading Strategy
-                    </span>
-                    <p className="text-xs text-body leading-relaxed">
-                      {faceShape.recommendation.contouring}
-                    </p>
-                  </div>
-
-                  <div className="p-4 bg-surfaceSoft rounded-[14px] border border-hairline">
-                    <span className="font-bold text-ink block mb-1">
-                      Blush Direction & Placement
-                    </span>
-                    <p className="text-xs text-body leading-relaxed">
-                      {faceShape.recommendation.blush}
-                    </p>
-                  </div>
-
-                  <div className="p-4 bg-surfaceSoft rounded-[14px] border border-hairline">
-                    <span className="font-bold text-ink block mb-1">
-                      Highlighter Strategy
-                    </span>
-                    <p className="text-xs text-body leading-relaxed">
-                      {faceShape.recommendation.highlighter}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <StylingAndPlacementGuide
+                faceShape={faceShape.primaryShape}
+                detectedUndertone={skinAnalysis?.undertone}
+              />
             )}
 
             {/* TAB 5: GOLDEN RATIO MEASUREMENTS (Airbnb 64px Rating Display) */}
