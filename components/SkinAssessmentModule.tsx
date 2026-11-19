@@ -49,9 +49,15 @@ export default function SkinAssessmentModule({
     return list;
   }, [analysis]);
 
-  const [selectedSkinType, setSelectedSkinType] = useState<SkinType>(initialSkinType);
+  // Identified Skin Type is strictly derived from the computer vision analysis (not user-toggleable)
+  const selectedSkinType: SkinType = initialSkinType;
   const [selectedConcerns, setSelectedConcerns] = useState<SkinConcern[]>(initialConcerns);
   const [activeTab, setActiveTab] = useState<"AM" | "PM" | "weekly">("AM");
+
+  // Keep concerns in sync if analysis updates
+  React.useEffect(() => {
+    setSelectedConcerns(initialConcerns);
+  }, [initialConcerns]);
 
   const routine = useMemo(() => {
     return generateSkincareRoutine(selectedSkinType, selectedConcerns);
@@ -187,29 +193,44 @@ export default function SkinAssessmentModule({
           </p>
         </div>
 
-        {/* Skin Type Pills */}
+        {/* 1. Identified Skin Type (Locked / Auto-Diagnosed by Vision AI) */}
         <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2">
-            1. Identified Skin Type
-          </label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted">
+              1. Identified Skin Type
+            </label>
+            <span className="text-[11px] font-semibold text-rausch flex items-center gap-1 bg-rausch/10 px-2.5 py-0.5 rounded-full border border-rausch/20">
+              <span>🔒</span> Auto-Diagnosed via Vision AI
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center">
             {SKIN_TYPES.map((type) => {
-              const isSelected = selectedSkinType === type;
+              const isDiagnosed = selectedSkinType === type;
               return (
-                <button
+                <div
                   key={type}
-                  onClick={() => setSelectedSkinType(type)}
-                  className={`text-xs px-4 py-2 rounded-full font-medium transition cursor-pointer ${
-                    isSelected
-                      ? "bg-ink text-white font-semibold shadow-sm"
-                      : "bg-surfaceSoft text-body hover:bg-hairlineSoft border border-transparent"
+                  className={`text-xs px-4 py-2 rounded-full font-medium select-none flex items-center gap-1.5 transition-all ${
+                    isDiagnosed
+                      ? "bg-ink text-white font-bold shadow-sm ring-2 ring-rausch/30"
+                      : "bg-surfaceSoft/70 text-mutedSoft border border-hairline/60 cursor-not-allowed opacity-60"
                   }`}
+                  title={isDiagnosed ? `Auto-diagnosed as ${type} based on facial metrics` : `Not diagnosed (${type})`}
                 >
-                  {type}
-                </button>
+                  {isDiagnosed && <span className="text-rausch">✓</span>}
+                  <span>{type}</span>
+                  {isDiagnosed && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rausch text-white font-bold">
+                      Diagnosed
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
+          <p className="text-[11px] text-muted mt-2">
+            Objectively classified from T-zone sebum reflectance ({analysis?.tZoneShineScore ?? 50}%) and cheek erythema ({analysis?.erythemaScore ?? 20}%). Manual override is disabled to maintain clinical diagnostic accuracy.
+          </p>
         </div>
 
         {/* Primary Concerns Multi-Select Pills */}
