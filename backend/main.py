@@ -75,6 +75,7 @@ class RatioMappingResponse(BaseModel):
     audit_trail: Dict[str, Any]
 
 
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
     return {

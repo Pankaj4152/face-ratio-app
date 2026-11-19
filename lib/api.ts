@@ -30,6 +30,15 @@ export interface RatioMappingResponse {
   audit_trail: Record<string, any>;
 }
 
+export function getApiBase(): string {
+  let base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  base = base.trim().replace(/\/+$/, "");
+  if (!base.startsWith("http://") && !base.startsWith("https://")) {
+    base = `https://${base}`;
+  }
+  return base;
+}
+
 export async function fetchSemanticMapping(
   faceShape: FaceShapeResult,
   goldenRatioScore: number | null
@@ -48,7 +57,7 @@ export async function fetchSemanticMapping(
     secondary_shape: faceShape.secondaryShape,
   };
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_BASE = getApiBase();
   const response = await fetch(`${API_BASE}/api/map-ratio`, {
     method: "POST",
     headers: {
@@ -104,7 +113,7 @@ export async function searchProducts(
   skinType?: string,
   topK: number = 8
 ): Promise<ProductSearchResponse> {
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_BASE = getApiBase();
   const response = await fetch(`${API_BASE}/api/search`, {
     method: "POST",
     headers: {
@@ -130,7 +139,7 @@ export async function listCatalogProducts(
   category?: string,
   faceShape?: string
 ): Promise<{ status: string; total: number; products: ProductItem[] }> {
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_BASE = getApiBase();
   const params = new URLSearchParams();
   if (category) params.append("category", category);
   if (faceShape) params.append("face_shape", faceShape);
