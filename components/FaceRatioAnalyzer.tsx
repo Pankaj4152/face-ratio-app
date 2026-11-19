@@ -52,15 +52,29 @@ export default function FaceRatioAnalyzer() {
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
         );
-        const landmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-            delegate: "GPU",
-          },
-          runningMode: "IMAGE",
-          numFaces: 1,
-        });
+        let landmarker: FaceLandmarker;
+        try {
+          landmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+              delegate: "CPU",
+            },
+            runningMode: "IMAGE",
+            numFaces: 1,
+          });
+        } catch (initErr) {
+          console.warn("Model initialization retry with CPU...", initErr);
+          landmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+              delegate: "CPU",
+            },
+            runningMode: "IMAGE",
+            numFaces: 1,
+          });
+        }
         if (!cancelled) {
           landmarkerRef.current = landmarker;
           setStatus("ready");
@@ -199,18 +213,41 @@ export default function FaceRatioAnalyzer() {
   );
 
   const runDetection = useCallback(
-    (img: HTMLImageElement) => {
+    async (img: HTMLImageElement) => {
       const landmarker = landmarkerRef.current;
       const canvas = canvasRef.current;
       if (!landmarker || !canvas) return;
 
       currentImageRef.current = img;
 
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (!w || !h) return;
 
-      const result = landmarker.detect(img);
-      if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+      canvas.width = w;
+      canvas.height = h;
+
+      try {
+        if (typeof img.decode === "function") {
+          await img.decode();
+        }
+      } catch {
+        // ignore decode errors if already decoded
+      }
+
+      let result: any = null;
+      try {
+        result = landmarker.detect(img);
+      } catch (detectErr) {
+        console.warn("Direct image detection failed, trying via canvas buffer...", detectErr);
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          result = landmarker.detect(canvas);
+        }
+      }
+
+      if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
         setNoFace(true);
         setResults(null);
         setScore(null);
@@ -273,7 +310,10 @@ export default function FaceRatioAnalyzer() {
     setImgSrc(url);
 
     const img = new Image();
-    img.onload = () => runDetection(img);
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      runDetection(img);
+    };
     img.src = url;
   }
 
