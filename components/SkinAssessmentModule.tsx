@@ -37,41 +37,47 @@ export default function SkinAssessmentModule({
     return "Normal";
   }, [analysis]);
 
-  const initialConcerns = useMemo<SkinConcern[]>(() => {
+  const detectedConcerns = useMemo<SkinConcern[]>(() => {
     const list: SkinConcern[] = [];
     if (!analysis) return ["Dullness & Uneven Texture"];
-    if (analysis.tZoneCondition === "High Shine (Oily)") list.push("Acne & Blemishes");
-    if (analysis.rednessCondition.includes("Noticeable") || analysis.rednessCondition.includes("Moderate")) {
+
+    // 1. High Shine -> Acne & Blemishes
+    if (analysis.tZoneShineScore > 62 || analysis.tZoneCondition === "High Shine (Oily)") {
+      list.push("Acne & Blemishes");
+    }
+
+    // 2. Erythema / Redness -> Redness & Sensitivity
+    if (analysis.erythemaScore > 42 || analysis.rednessCondition.includes("Noticeable") || analysis.rednessCondition.includes("Moderate")) {
       list.push("Redness & Sensitivity");
     }
-    if (analysis.hydrationEstimate === "Dehydrated / Dry") list.push("Dehydration & Flakiness");
-    if (list.length === 0) list.push("Dullness & Uneven Texture");
+
+    // 3. Dehydration / Low Moisture -> Dehydration & Flakiness
+    if (analysis.hydrationEstimate === "Dehydrated / Dry" || analysis.tZoneShineScore < 36) {
+      list.push("Dehydration & Flakiness");
+    }
+
+    // 4. Melanin & Tone Analysis -> Dark Spots & Hyperpigmentation
+    const patchLuminanceDelta = Math.abs(analysis.metrics.forehead.luminance - analysis.metrics.leftCheek.luminance);
+    if (patchLuminanceDelta > 16 || analysis.fitzpatrickScale === "Type IV" || analysis.fitzpatrickScale === "Type V") {
+      list.push("Dark Spots & Hyperpigmentation");
+    }
+
+    // 5. Texture / Dullness
+    if (list.length < 2 || analysis.metrics.chin.luminance < 125) {
+      list.push("Dullness & Uneven Texture");
+    }
+
     return list;
   }, [analysis]);
 
-  // Identified Skin Type is strictly derived from the computer vision analysis (not user-toggleable)
+  // Both Skin Type and Skin Concerns are strictly auto-diagnosed by Vision AI (not user-toggleable)
   const selectedSkinType: SkinType = initialSkinType;
-  const [selectedConcerns, setSelectedConcerns] = useState<SkinConcern[]>(initialConcerns);
+  const selectedConcerns: SkinConcern[] = detectedConcerns;
   const [activeTab, setActiveTab] = useState<"AM" | "PM" | "weekly">("AM");
-
-  // Keep concerns in sync if analysis updates
-  React.useEffect(() => {
-    setSelectedConcerns(initialConcerns);
-  }, [initialConcerns]);
 
   const routine = useMemo(() => {
     return generateSkincareRoutine(selectedSkinType, selectedConcerns);
   }, [selectedSkinType, selectedConcerns]);
-
-  const toggleConcern = (concern: SkinConcern) => {
-    setSelectedConcerns((prev) => {
-      if (prev.includes(concern)) {
-        return prev.filter((c) => c !== concern);
-      } else {
-        return [...prev, concern];
-      }
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -233,30 +239,44 @@ export default function SkinAssessmentModule({
           </p>
         </div>
 
-        {/* Primary Concerns Multi-Select Pills */}
+        {/* 2. Detected Skin Concerns (Locked / Auto-Diagnosed by Vision AI) */}
         <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2">
-            2. Primary Skin Concerns (Select all that apply)
-          </label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted">
+              2. Detected Skin Concerns
+            </label>
+            <span className="text-[11px] font-semibold text-rausch flex items-center gap-1 bg-rausch/10 px-2.5 py-0.5 rounded-full border border-rausch/20">
+              <span>🔒</span> Auto-Diagnosed via Vision AI
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center">
             {ALL_CONCERNS.map((concern) => {
-              const isChecked = selectedConcerns.includes(concern);
+              const isDetected = selectedConcerns.includes(concern);
               return (
-                <button
+                <div
                   key={concern}
-                  onClick={() => toggleConcern(concern)}
-                  className={`text-xs px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 cursor-pointer ${
-                    isChecked
-                      ? "bg-rausch text-white font-medium shadow-sm"
-                      : "bg-surfaceSoft text-body hover:bg-hairlineSoft border border-transparent"
+                  className={`text-xs px-3.5 py-1.5 rounded-full font-medium select-none flex items-center gap-1.5 transition-all ${
+                    isDetected
+                      ? "bg-rausch text-white font-bold shadow-sm"
+                      : "bg-surfaceSoft/70 text-mutedSoft border border-hairline/60 cursor-not-allowed opacity-60"
                   }`}
+                  title={isDetected ? `Auto-detected concern: ${concern}` : `Not detected (${concern})`}
                 >
-                  <span>{isChecked ? "✓" : "+"}</span>
+                  <span>{isDetected ? "✓" : "–"}</span>
                   <span>{concern}</span>
-                </button>
+                  {isDetected && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white/20 text-white font-bold">
+                      Detected
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
+          <p className="text-[11px] text-muted mt-2">
+            Diagnosed based on cheek erythema vascular flushing, T-zone sebum reflectance, and phototype melanin dispersion. Manual selection is disabled.
+          </p>
         </div>
       </div>
 
