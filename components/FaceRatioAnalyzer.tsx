@@ -16,9 +16,11 @@ import {
   RatioMappingResponse,
 } from "@/lib/api";
 import ProductRecommendations from "@/components/ProductRecommendations";
+import SkinAssessmentModule from "@/components/SkinAssessmentModule";
+import { analyzeSkinFromCanvas, SkinAnalysisResult } from "@/lib/skinAnalysis";
 
 type Status = "loading" | "ready" | "error";
-type ActiveTab = "shape" | "goldenRatio" | "makeup" | "semantic" | "products";
+type ActiveTab = "shape" | "skin" | "products" | "makeup" | "goldenRatio" | "semantic";
 
 export default function FaceRatioAnalyzer() {
   const [status, setStatus] = useState<Status>("loading");
@@ -26,6 +28,7 @@ export default function FaceRatioAnalyzer() {
   const [results, setResults] = useState<RatioResult[] | null>(null);
   const [score, setScore] = useState<number | null>(null);
   const [faceShape, setFaceShape] = useState<FaceShapeResult | null>(null);
+  const [skinAnalysis, setSkinAnalysis] = useState<SkinAnalysisResult | null>(null);
   const [noFace, setNoFace] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("shape");
 
@@ -253,6 +256,7 @@ export default function FaceRatioAnalyzer() {
         setResults(null);
         setScore(null);
         setFaceShape(null);
+        setSkinAnalysis(null);
         setBackendResult(null);
         currentLandmarksRef.current = null;
         return;
@@ -279,10 +283,18 @@ export default function FaceRatioAnalyzer() {
       );
       setFaceShape(classifiedShape);
 
-      // 3. Render Canvas Overlays
+      // 3. Part 4 Computer Vision Skin Tone & Condition Analysis (sampled from pristine photo)
+      const rawCtx = canvas.getContext("2d", { willReadFrequently: true });
+      if (rawCtx) {
+        rawCtx.drawImage(img, 0, 0, w, h);
+        const skinMetrics = analyzeSkinFromCanvas(canvas, landmarks);
+        setSkinAnalysis(skinMetrics);
+      }
+
+      // 4. Render Canvas Overlays
       drawVisuals(landmarks, canvas.width, canvas.height);
 
-      // 4. Trigger Part 2 FastAPI Semantic Mapping
+      // 5. Trigger Part 2 FastAPI Semantic Mapping
       queryFastAPI(classifiedShape, overallScore);
     },
     [drawVisuals, queryFastAPI]
@@ -467,6 +479,36 @@ export default function FaceRatioAnalyzer() {
                 Face Shape Details
               </button>
               <button
+                onClick={() => setActiveTab("skin")}
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                  activeTab === "skin"
+                    ? "border-emerald-500 text-emerald-400"
+                    : "border-transparent text-ink/60 hover:text-ink"
+                }`}
+              >
+                <span>Skin Health & Routine</span>
+                {skinAnalysis && (
+                  <span
+                    className="w-2 h-2 rounded-full border border-black/30"
+                    style={{ backgroundColor: skinAnalysis.hexColor }}
+                    title={`Tone: ${skinAnalysis.skinTone}`}
+                  />
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("products")}
+                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                  activeTab === "products"
+                    ? "border-violet-500 text-violet-400"
+                    : "border-transparent text-ink/60 hover:text-ink"
+                }`}
+              >
+                <span>Recommended Products</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-mono">
+                  SBERT+FAISS
+                </span>
+              </button>
+              <button
                 onClick={() => setActiveTab("makeup")}
                 className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === "makeup"
@@ -498,19 +540,6 @@ export default function FaceRatioAnalyzer() {
                 {backendResult && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 )}
-              </button>
-              <button
-                onClick={() => setActiveTab("products")}
-                className={`text-xs font-semibold px-3 py-2 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-                  activeTab === "products"
-                    ? "border-violet-500 text-violet-400"
-                    : "border-transparent text-ink/60 hover:text-ink"
-                }`}
-              >
-                <span>Recommended Products</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-mono">
-                  SBERT+FAISS
-                </span>
               </button>
             </div>
 
@@ -899,7 +928,15 @@ export default function FaceRatioAnalyzer() {
                 )}
               </div>
             )}
-            {/* TAB 5: SEMANTIC PRODUCT RECOMMENDATIONS (PART 3) */}
+            {/* TAB 2: SKIN ASSESSMENT & ROUTINE (PART 4) */}
+            {activeTab === "skin" && (
+              <SkinAssessmentModule
+                analysis={skinAnalysis}
+                faceShape={faceShape.primaryShape}
+              />
+            )}
+
+            {/* TAB 3: SEMANTIC PRODUCT RECOMMENDATIONS (PART 3) */}
             {activeTab === "products" && (
               <div className="pt-2">
                 <ProductRecommendations
